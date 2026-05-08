@@ -885,11 +885,340 @@ window.toggleFinanzas = () => {
   renderHome();
 };
 
+// ===== MÓDULO DIRECTORIO =====
+window.renderDirectorio = () => {
+  const tab = APP.tabDirectorio || 'clientes';
+  const busq = APP.directorioBuscador || '';
+  const clientesFiltrados = APP.clientes
+    .filter(c => c.nombre.toLowerCase().includes(busq.toLowerCase()) || (c.telefono||'').includes(busq))
+    .sort((a,b) => a.nombre.localeCompare(b.nombre));
+  const vehiculosFiltrados = APP.vehiculos
+    .filter(v => (v.patente||'').toLowerCase().includes(busq.toLowerCase()) || (v.marca||'').toLowerCase().includes(busq.toLowerCase()) || (v.modelo||'').toLowerCase().includes(busq.toLowerCase()))
+    .sort((a,b) => (a.marca+a.modelo).localeCompare(b.marca+b.modelo));
+
+  document.getElementById('pantalla-directorio').innerHTML = `
+    <div class="tabs">
+      <button class="tab ${tab==='clientes'?'activo':''}" onclick="setTabDirectorio('clientes')">Clientes (${APP.clientes.length})</button>
+      <button class="tab ${tab==='vehiculos'?'activo':''}" onclick="setTabDirectorio('vehiculos')">Vehículos (${APP.vehiculos.length})</button>
+    </div>
+
+    ${tab === 'clientes' ? `
+      <div class="seccion-header">
+        <h2 class="seccion-titulo" style="color:var(--azul)">
+          <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Directorio de clientes
+        </h2>
+        <button class="btn btn-primary btn-sm btn-icon" onclick="abrirFormCliente()" style="border-radius:50%">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
+      <div class="buscador">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Buscar por nombre o teléfono..." value="${busq}" oninput="APP.directorioBuscador=this.value;renderDirectorio()" />
+      </div>
+      ${clientesFiltrados.length === 0 ? `
+        <div class="empty">
+          <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          <p>${busq ? 'No se encontraron clientes' : 'Aún no hay clientes registrados'}</p>
+        </div>` : 
+        clientesFiltrados.map(c => `
+          <div class="lista-item" onclick="irA('detalle-cliente',{id:'${c.id}'})">
+            <div style="display:flex;align-items:center;gap:12px;flex:1">
+              <div style="width:40px;height:40px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <div>
+                <div class="lista-item-titulo">${c.nombre}</div>
+                <div class="lista-item-sub">${c.telefono || 'Sin teléfono'}</div>
+                <div class="lista-item-sub2">${APP.vehiculos.filter(v=>v.clienteId===c.id).length} vehículo(s)</div>
+              </div>
+            </div>
+            <div class="lista-chevron"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+          </div>`).join('')
+      }
+    ` : `
+      <div class="seccion-header">
+        <h2 class="seccion-titulo" style="color:var(--morado)">
+          <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          Parque automotor
+        </h2>
+        <button class="btn btn-primary btn-sm btn-icon" onclick="abrirFormVehiculo()" style="border-radius:50%;background:var(--morado)">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
+      <div class="buscador">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Buscar por patente, marca o modelo..." value="${busq}" oninput="APP.directorioBuscador=this.value;renderDirectorio()" />
+      </div>
+      ${vehiculosFiltrados.length === 0 ? `
+        <div class="empty">
+          <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          <p>${busq ? 'No se encontraron vehículos' : 'Aún no hay vehículos registrados'}</p>
+        </div>` :
+        vehiculosFiltrados.map(v => {
+          const dueno = APP.clientes.find(c => c.id === v.clienteId);
+          return `
+          <div class="lista-item" onclick="irA('detalle-vehiculo',{id:'${v.id}'})">
+            <div style="display:flex;align-items:center;gap:12px;flex:1">
+              <div style="width:40px;height:40px;border-radius:50%;background:#f5f3ff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+              </div>
+              <div>
+                <div class="lista-item-titulo">${v.marca} ${v.modelo}</div>
+                <div class="lista-item-sub" style="text-transform:uppercase;letter-spacing:0.05em">${v.patente}</div>
+                <div class="lista-item-sub2" style="color:var(--azul)">Dueño: ${dueno ? dueno.nombre : 'Desconocido'}</div>
+              </div>
+            </div>
+            <div class="lista-chevron"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+          </div>`;
+        }).join('')
+      }
+    `}
+  `;
+};
+
+window.setTabDirectorio = (tab) => {
+  APP.tabDirectorio = tab;
+  APP.directorioBuscador = '';
+  renderDirectorio();
+};
+
+// FORM NUEVO CLIENTE
+window.abrirFormCliente = (clienteEditar = null) => {
+  const es = !!clienteEditar;
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">${es ? 'Editar cliente' : 'Nuevo cliente'}</h3>
+    <div id="form-cliente-error" class="error-txt" style="display:none"></div>
+    <div class="campo">
+      <label>Nombre completo <span class="obligatorio">*</span></label>
+      <input type="text" id="fc-nombre" placeholder="Ej: Juan Pérez" value="${es ? clienteEditar.nombre : ''}" />
+    </div>
+    <div class="campo">
+      <label>Teléfono / WhatsApp <span class="obligatorio">*</span></label>
+      <input type="tel" id="fc-telefono" placeholder="Ej: 1134567890" value="${es ? clienteEditar.telefono : ''}" />
+    </div>
+    <div class="campo">
+      <label>Domicilio <span class="campo-opcional">(opcional)</span></label>
+      <input type="text" id="fc-domicilio" placeholder="Ej: Av. Corrientes 1234" value="${es ? (clienteEditar.domicilio||'') : ''}" />
+    </div>
+    <div class="campo">
+      <label>Notas internas <span class="campo-opcional">(opcional)</span></label>
+      <textarea id="fc-notas" rows="2" placeholder="Observaciones sobre el cliente...">${es ? (clienteEditar.notas||'') : ''}</textarea>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCliente(${es ? `'${clienteEditar.id}'` : 'null'})">${es ? 'Guardar cambios' : 'Agregar cliente'}</button>
+    </div>
+  `);
+};
+
+window.guardarCliente = async (idExistente) => {
+  const nombre = document.getElementById('fc-nombre').value.trim();
+  const telefono = document.getElementById('fc-telefono').value.trim();
+  const domicilio = document.getElementById('fc-domicilio').value.trim();
+  const notas = document.getElementById('fc-notas').value.trim();
+  const errDiv = document.getElementById('form-cliente-error');
+
+  if (!nombre || !telefono) {
+    errDiv.textContent = 'El nombre y el teléfono son obligatorios.';
+    errDiv.style.display = 'block';
+    if (!nombre) document.getElementById('fc-nombre').classList.add('error');
+    if (!telefono) document.getElementById('fc-telefono').classList.add('error');
+    return;
+  }
+
+  const id = idExistente || getId();
+  await guardarDoc('clientes', id, { id, nombre, telefono, domicilio, notas });
+  cerrarModal();
+  mostrarToast(idExistente ? '✅ Cliente actualizado.' : '✅ Cliente guardado en la nube.');
+  if (idExistente) { APP.params = {id: idExistente}; renderDetalleCliente(); }
+};
+
+// FORM NUEVO VEHÍCULO
+window.abrirFormVehiculo = (clientePreseleccionado = null, vehiculoEditar = null) => {
+  const es = !!vehiculoEditar;
+  const opcionesClientes = APP.clientes.sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(c =>
+    `<option value="${c.id}" ${(clientePreseleccionado===c.id || (es && vehiculoEditar.clienteId===c.id)) ? 'selected' : ''}>${c.nombre}</option>`
+  ).join('');
+
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">${es ? 'Editar vehículo' : 'Nuevo vehículo'}</h3>
+    <div id="form-vehiculo-error" class="error-txt" style="display:none"></div>
+    <div class="campo">
+      <label>Cliente propietario <span class="obligatorio">*</span></label>
+      <div style="display:flex;gap:8px">
+        <select id="fv-cliente" style="flex:1;padding:12px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);background:var(--blanco);color:var(--texto);font-size:15px">
+          <option value="">Seleccionar cliente...</option>
+          ${opcionesClientes}
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="cerrarModal();abrirFormCliente()" style="white-space:nowrap;padding:0 12px">+ Nuevo</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="campo">
+        <label>Marca <span class="obligatorio">*</span></label>
+        <input type="text" id="fv-marca" placeholder="Toyota" value="${es ? vehiculoEditar.marca : ''}" />
+      </div>
+      <div class="campo">
+        <label>Modelo <span class="obligatorio">*</span></label>
+        <input type="text" id="fv-modelo" placeholder="Corolla" value="${es ? vehiculoEditar.modelo : ''}" />
+      </div>
+      <div class="campo">
+        <label>Dominio (patente) <span class="obligatorio">*</span></label>
+        <input type="text" id="fv-patente" placeholder="ABC123" style="text-transform:uppercase" value="${es ? vehiculoEditar.patente : ''}" />
+      </div>
+      <div class="campo">
+        <label>Kilometraje <span class="obligatorio">*</span></label>
+        <input type="number" id="fv-km" placeholder="50000" value="${es ? vehiculoEditar.km : ''}" />
+      </div>
+    </div>
+    <div class="campo">
+      <label>Fecha de ingreso <span class="obligatorio">*</span></label>
+      <input type="date" id="fv-fecha" value="${es ? (vehiculoEditar.fechaIngreso||new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0]}" />
+    </div>
+    <div class="campo">
+      <label>Nota interna <span class="campo-opcional">(opcional)</span></label>
+      <textarea id="fv-notas" rows="2" placeholder="Observaciones sobre el vehículo...">${es ? (vehiculoEditar.notas||'') : ''}</textarea>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-primary" style="background:var(--morado)" onclick="guardarVehiculo(${es ? `'${vehiculoEditar.id}'` : 'null'})">${es ? 'Guardar cambios' : 'Agregar vehículo'}</button>
+    </div>
+  `);
+};
+
+window.guardarVehiculo = async (idExistente) => {
+  const clienteId = document.getElementById('fv-cliente').value;
+  const marca = document.getElementById('fv-marca').value.trim();
+  const modelo = document.getElementById('fv-modelo').value.trim();
+  const patente = document.getElementById('fv-patente').value.trim().toUpperCase();
+  const km = document.getElementById('fv-km').value;
+  const fechaIngreso = document.getElementById('fv-fecha').value;
+  const notas = document.getElementById('fv-notas').value.trim();
+  const errDiv = document.getElementById('form-vehiculo-error');
+
+  if (!clienteId || !marca || !modelo || !patente || !km) {
+    errDiv.textContent = 'Completá todos los campos obligatorios.';
+    errDiv.style.display = 'block';
+    return;
+  }
+
+  const id = idExistente || getId();
+  await guardarDoc('vehiculos', id, { id, clienteId, marca, modelo, patente, km: Number(km), fechaIngreso, notas });
+  cerrarModal();
+  mostrarToast(idExistente ? '✅ Vehículo actualizado.' : '✅ Vehículo guardado en la nube.');
+  if (idExistente) { APP.params = {id: idExistente}; renderDetalleVehiculo(); }
+};
+
+// DETALLE CLIENTE
+window.renderDetalleCliente = () => {
+  const id = APP.params?.id;
+  const c = APP.clientes.find(x => x.id === id);
+  if (!c) { irA('directorio'); return; }
+  const vehiculosPropios = APP.vehiculos.filter(v => v.clienteId === c.id);
+  const srvs = APP.servicios.filter(s => vehiculosPropios.some(v => v.id === s.vehiculoId));
+  const deuda = srvs.reduce((a, s) => a + getSaldo(s), 0);
+
+  document.getElementById('pantalla-detalle-cliente').innerHTML = `
+    <button class="btn-volver" onclick="irA('directorio')">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      Volver
+    </button>
+    <div class="card" style="padding:16px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--borde)">
+        <h2 style="font-size:18px;font-weight:700;color:var(--texto);display:flex;align-items:center;gap:8px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--azul)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Ficha de cliente
+        </h2>
+        <button class="btn btn-secondary btn-sm" onclick="abrirFormCliente(APP.clientes.find(x=>x.id==='${c.id}'))">✏️ Editar</button>
+      </div>
+      <div class="info-row"><span class="info-label">Nombre</span><span class="info-valor">${c.nombre}</span></div>
+      <div class="info-row"><span class="info-label">Teléfono</span><span class="info-valor">${c.telefono}</span></div>
+      <div class="info-row"><span class="info-label">Domicilio</span><span class="info-valor">${c.domicilio || '—'}</span></div>
+      ${c.notas ? `<div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px;margin-top:8px"><p style="font-size:11px;font-weight:700;color:#854d0e;margin-bottom:4px">NOTAS INTERNAS</p><p style="font-size:13px;color:var(--texto)">${c.notas}</p></div>` : ''}
+      ${deuda > 0 ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-top:8px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;font-weight:600;color:var(--rojo)">⚠️ Deuda pendiente</span><span style="font-size:16px;font-weight:700;color:var(--rojo)">${formatDinero(deuda)}</span></div>` : ''}
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3 style="font-weight:700;color:var(--texto)">Vehículos (${vehiculosPropios.length})</h3>
+      <button class="btn btn-secondary btn-sm" onclick="abrirFormVehiculo('${c.id}')">+ Agregar</button>
+    </div>
+    ${vehiculosPropios.length === 0 ? '<p style="color:var(--texto3);font-size:14px;text-align:center;padding:20px">Sin vehículos registrados</p>' :
+      vehiculosPropios.map(v => `
+        <div class="lista-item" onclick="irA('detalle-vehiculo',{id:'${v.id}'})">
+          <div style="display:flex;align-items:center;gap:10px;flex:1">
+            <div style="width:36px;height:36px;border-radius:50%;background:#f5f3ff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+            </div>
+            <div>
+              <div style="font-weight:700;color:var(--texto)">${v.marca} ${v.modelo}</div>
+              <div style="font-size:12px;color:var(--texto3);text-transform:uppercase">${v.patente} • ${v.km} km</div>
+            </div>
+          </div>
+          <div class="lista-chevron"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </div>`).join('')
+    }
+  `;
+};
+
+// DETALLE VEHÍCULO
+window.renderDetalleVehiculo = () => {
+  const id = APP.params?.id;
+  const v = APP.vehiculos.find(x => x.id === id);
+  if (!v) { irA('directorio'); return; }
+  const dueno = APP.clientes.find(c => c.id === v.clienteId);
+  const srvs = APP.servicios.filter(s => s.vehiculoId === v.id).sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+
+  document.getElementById('pantalla-detalle-vehiculo').innerHTML = `
+    <button class="btn-volver" onclick="irA('detalle-cliente',{id:'${v.clienteId}'})">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      Volver
+    </button>
+    <div class="card" style="padding:16px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--borde)">
+        <h2 style="font-size:18px;font-weight:700;color:var(--texto);display:flex;align-items:center;gap:8px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--morado)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          Ficha del vehículo
+        </h2>
+        <button class="btn btn-secondary btn-sm" onclick="abrirFormVehiculo(null, APP.vehiculos.find(x=>x.id==='${v.id}'))">✏️ Editar</button>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Propietario</span>
+        <span class="info-valor" style="color:var(--azul);cursor:pointer" onclick="irA('detalle-cliente',{id:'${v.clienteId}'})">${dueno ? dueno.nombre : '—'}</span>
+      </div>
+      <div class="info-row"><span class="info-label">Marca</span><span class="info-valor">${v.marca}</span></div>
+      <div class="info-row"><span class="info-label">Modelo</span><span class="info-valor">${v.modelo}</span></div>
+      <div class="info-row"><span class="info-label">Dominio</span><span class="info-valor" style="text-transform:uppercase;letter-spacing:0.05em">${v.patente}</span></div>
+      <div class="info-row"><span class="info-label">Kilómetros</span><span class="info-valor">${v.km} km</span></div>
+      <div class="info-row"><span class="info-label">Fecha ingreso</span><span class="info-valor">${formatFecha(v.fechaIngreso)}</span></div>
+      ${v.notas ? `<div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px;margin-top:8px"><p style="font-size:11px;font-weight:700;color:#854d0e;margin-bottom:4px">NOTAS INTERNAS</p><p style="font-size:13px;color:var(--texto)">${v.notas}</p></div>` : ''}
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3 style="font-weight:700;color:var(--texto);display:flex;align-items:center;gap:6px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.28"/></svg>
+        Historial (${srvs.length})
+      </h3>
+    </div>
+    ${srvs.length === 0 ? '<p style="color:var(--texto3);font-size:14px;text-align:center;padding:20px">Sin servicios registrados</p>' :
+      srvs.map(s => `
+        <div class="lista-item" onclick="irA('detalle-servicio',{id:'${s.id}'})">
+          <div style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <span style="font-weight:600;color:var(--texto);font-size:14px">${formatFecha(s.fecha)}</span>
+              <span class="badge ${getEstadoBadge(s.estado)}">${s.estado}</span>
+            </div>
+            <p style="font-size:12px;color:var(--texto3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${s.tareas || 'Sin descripción'}</p>
+          </div>
+        </div>`).join('')
+    }
+  `;
+};
+
 window.renderAgenda = () => {
   document.getElementById('pantalla-agenda').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Módulo Agenda — próximamente</p>`;
-};
-window.renderDirectorio = () => {
-  document.getElementById('pantalla-directorio').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Módulo Directorio — próximamente</p>`;
 };
 window.renderFinanzas = () => {
   document.getElementById('pantalla-finanzas').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Módulo Finanzas — próximamente</p>`;
@@ -901,8 +1230,6 @@ window.renderConfiguracion = () => {
   document.getElementById('pantalla-configuracion').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Configuración — próximamente</p>`;
 };
 window.renderDetalleServicio = () => {};
-window.renderDetalleCliente = () => {};
-window.renderDetalleVehiculo = () => {};
 window.calcularAlertas = () => [];
 
 // ===== INICIALIZACIÓN =====
