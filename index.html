@@ -1620,6 +1620,14 @@ window.renderDetalleServicio = () => {
         </div>
       `}
     </div>` : ''}
+
+    <!-- ZONA PELIGROSA -->
+    <div style="margin-top:24px;padding-top:20px;border-top:2px dashed #fecaca">
+      <p style="font-size:11px;font-weight:700;color:var(--texto3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">Zona de peligro</p>
+      <button class="btn" style="background:#fef2f2;color:var(--rojo);border:1.5px solid #fecaca;font-size:15px;font-weight:700" onclick="confirmarEliminarServicio('${s.id}')">
+        🗑️ Eliminar este servicio
+      </button>
+    </div>
   `;
 
   if (s.estado === 'Entregado' && !s.acuseEntrega) iniciarFirma();
@@ -1861,17 +1869,36 @@ window.aplicarPlantillaEdit = (id) => {
 window.guardarEditServicio = async (srvId) => {
   const s = APP.servicios.find(x => x.id === srvId);
   const estado = document.getElementById('edit-estado').value;
+  const fechaEntrega = document.getElementById('edit-fechaEntrega').value;
   const estadosFinales = ['Finalizado','Listo para entregar','Entregado'];
+
+  // Validación: En proceso requiere fecha de entrega
+  if (estado === 'En proceso' && !fechaEntrega) {
+    const errDiv = document.getElementById('edit-error') || (() => {
+      const d = document.createElement('div');
+      d.id = 'edit-error';
+      d.className = 'error-txt';
+      document.getElementById('edit-fechaEntrega').parentElement.appendChild(d);
+      return d;
+    })();
+    errDiv.textContent = '⚠️ Debés ingresar una fecha de entrega estimada para pasar al estado "En proceso".';
+    errDiv.style.display = 'block';
+    document.getElementById('edit-fechaEntrega').style.borderColor = 'var(--rojo)';
+    return;
+  }
+
   const fechaFin = document.getElementById('edit-fechaFin')?.value || (estadosFinales.includes(estado) ? (s.fechaFinalizacion || new Date().toISOString().split('T')[0]) : '');
   const nuevoKm = Number(document.getElementById('edit-km').value);
+  const nuevoEstado = estado;
+  const estadoAnterior = s.estado;
 
   const actualizado = {
     ...s,
-    estado,
+    estado: nuevoEstado,
     prioridad: document.getElementById('edit-prioridad').value,
     fecha: document.getElementById('edit-fecha').value,
     km: nuevoKm,
-    fechaEntrega: document.getElementById('edit-fechaEntrega').value,
+    fechaEntrega,
     fechaFinalizacion: fechaFin,
     tareas: document.getElementById('edit-tareas').value,
     repuestos: document.getElementById('edit-repuestos').value,
@@ -1883,13 +1910,67 @@ window.guardarEditServicio = async (srvId) => {
   const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
   if (v && v.km !== nuevoKm) await guardarDoc('vehiculos', v.id, { ...v, km: nuevoKm });
   cerrarModal();
-  mostrarToast('✅ Servicio actualizado.');
+
+  // Si cambió a Presupuesto aprobado, ofrecer registrar seña
+  if (nuevoEstado === 'Presupuesto aprobado' && estadoAnterior !== 'Presupuesto aprobado') {
+    mostrarToast('✅ Servicio actualizado.');
+    setTimeout(() => abrirAprobarPpto(srvId), 400);
+  } else {
+    mostrarToast('✅ Servicio actualizado.');
+  }
+
   APP.params = { id: srvId };
   renderDetalleServicio();
 };
 
 window.renderFinanzas = () => {
   document.getElementById('pantalla-finanzas').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Módulo Finanzas — próximamente</p>`;
+};
+
+// ELIMINAR SERVICIO CON PIN
+window.confirmarEliminarServicio = (srvId) => {
+  const s = APP.servicios.find(x => x.id === srvId);
+  const v = APP.vehiculos.find(x => x.id === s?.vehiculoId);
+  const tienePagos = s?.pagos && s.pagos.length > 0;
+  const totalPagado = tienePagos ? s.pagos.reduce((a,p) => a + Number(p.monto), 0) : 0;
+
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="width:56px;height:56px;background:#fef2f2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:28px">🗑️</div>
+      <h3 style="font-size:18px;font-weight:700;color:var(--rojo);margin-bottom:6px">Eliminar servicio</h3>
+      <p style="font-size:14px;color:var(--texto2)">Estás por eliminar la ficha de <strong>${v ? v.marca+' '+v.modelo : 'este vehículo'}</strong>.</p>
+    </div>
+    <div class="advertencia">
+      <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>Esta acción <strong>no se puede deshacer</strong>. Se eliminará la ficha completa incluyendo el historial de estados.${tienePagos ? ` También se eliminarán <strong>${s.pagos.length} pago(s)</strong> por un total de <strong>${formatDinero(totalPagado)}</strong>.` : ''}</span>
+    </div>
+    ${localStorage.getItem('taller_pin') ? `
+    <div class="campo" style="margin-top:14px">
+      <label>Ingresá tu PIN para confirmar</label>
+      <input type="password" id="pin-eliminar" maxlength="6" placeholder="••••••" style="text-align:center;font-size:20px;letter-spacing:8px" inputmode="numeric" />
+    </div>` : ''}
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn" style="background:var(--rojo);color:white;font-weight:700" onclick="ejecutarEliminarServicio('${srvId}')">Sí, eliminar definitivamente</button>
+    </div>
+  `);
+};
+
+window.ejecutarEliminarServicio = async (srvId) => {
+  const pinGuardado = localStorage.getItem('taller_pin');
+  if (pinGuardado) {
+    const pinIngresado = document.getElementById('pin-eliminar')?.value;
+    if (pinIngresado !== pinGuardado) {
+      mostrarToast('❌ PIN incorrecto. No se eliminó el servicio.');
+      cerrarModal();
+      return;
+    }
+  }
+  await borrarDoc('servicios', srvId);
+  cerrarModal();
+  mostrarToast('🗑️ Servicio eliminado.');
+  irA('agenda');
 };
 window.renderAlertas = () => {
   document.getElementById('pantalla-alertas').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Centro de Alertas — próximamente</p>`;
