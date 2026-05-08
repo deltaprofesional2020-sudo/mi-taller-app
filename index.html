@@ -1132,7 +1132,10 @@ window.renderDetalleCliente = () => {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--azul)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           Ficha de cliente
         </h2>
-        <button class="btn btn-secondary btn-sm" onclick="abrirFormCliente(APP.clientes.find(x=>x.id==='${c.id}'))">✏️ Editar</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" onclick="abrirFormCliente(APP.clientes.find(x=>x.id==='${c.id}'))">✏️ Editar</button>
+          <button class="btn btn-danger btn-sm" onclick="confirmarBorrarCliente('${c.id}')">🗑️</button>
+        </div>
       </div>
       <div class="info-row"><span class="info-label">Nombre</span><span class="info-valor">${c.nombre}</span></div>
       <div class="info-row"><span class="info-label">Teléfono</span><span class="info-valor">${c.telefono}</span></div>
@@ -1182,7 +1185,10 @@ window.renderDetalleVehiculo = () => {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--morado)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
           Ficha del vehículo
         </h2>
-        <button class="btn btn-secondary btn-sm" onclick="abrirFormVehiculo(null, APP.vehiculos.find(x=>x.id==='${v.id}'))">✏️ Editar</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" onclick="abrirFormVehiculo(null, APP.vehiculos.find(x=>x.id==='${v.id}'))">✏️ Editar</button>
+          <button class="btn btn-danger btn-sm" onclick="confirmarBorrarVehiculo('${v.id}')">🗑️</button>
+        </div>
       </div>
       <div class="info-row">
         <span class="info-label">Propietario</span>
@@ -1231,6 +1237,69 @@ window.renderConfiguracion = () => {
 };
 window.renderDetalleServicio = () => {};
 window.calcularAlertas = () => [];
+
+// ===== BORRADO CON ADVERTENCIA =====
+window.confirmarBorrarCliente = (id) => {
+  const c = APP.clientes.find(x => x.id === id);
+  const vehiculosPropios = APP.vehiculos.filter(v => v.clienteId === id);
+  const tieneSrvs = APP.servicios.some(s => vehiculosPropios.some(v => v.id === s.vehiculoId));
+
+  let advertencia = '';
+  if (vehiculosPropios.length > 0 && tieneSrvs) {
+    advertencia = `<div class="advertencia"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Este cliente tiene ${vehiculosPropios.length} vehículo(s) y servicios registrados. Se borrarán también sus vehículos. Los servicios quedarán huérfanos.</div>`;
+  } else if (vehiculosPropios.length > 0) {
+    advertencia = `<div class="advertencia"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Este cliente tiene ${vehiculosPropios.length} vehículo(s) asociado(s) que también se borrarán.</div>`;
+  }
+
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">¿Borrar cliente?</h3>
+    <p style="font-size:14px;color:var(--texto2);margin-bottom:14px">Estás por eliminar a <strong>${c?.nombre}</strong>. Esta acción no se puede deshacer.</p>
+    ${advertencia}
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-danger" onclick="ejecutarBorrarCliente('${id}')">Sí, borrar</button>
+    </div>
+  `);
+};
+
+window.ejecutarBorrarCliente = async (id) => {
+  cerrarModal();
+  const vehiculosPropios = APP.vehiculos.filter(v => v.clienteId === id);
+  for (const v of vehiculosPropios) await borrarDoc('vehiculos', v.id);
+  await borrarDoc('clientes', id);
+  mostrarToast('🗑️ Cliente eliminado.');
+  irA('directorio');
+};
+
+window.confirmarBorrarVehiculo = (id) => {
+  const v = APP.vehiculos.find(x => x.id === id);
+  const tieneSrvs = APP.servicios.some(s => s.vehiculoId === id);
+
+  let advertencia = '';
+  if (tieneSrvs) {
+    advertencia = `<div class="advertencia"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Este vehículo tiene servicios registrados en el historial. Los servicios quedarán sin vehículo asociado.</div>`;
+  }
+
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">¿Borrar vehículo?</h3>
+    <p style="font-size:14px;color:var(--texto2);margin-bottom:14px">Estás por eliminar el <strong>${v?.marca} ${v?.modelo} (${v?.patente})</strong>. Esta acción no se puede deshacer.</p>
+    ${advertencia}
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-danger" onclick="ejecutarBorrarVehiculo('${id}')">Sí, borrar</button>
+    </div>
+  `);
+};
+
+window.ejecutarBorrarVehiculo = async (id) => {
+  const v = APP.vehiculos.find(x => x.id === id);
+  cerrarModal();
+  await borrarDoc('vehiculos', id);
+  mostrarToast('🗑️ Vehículo eliminado.');
+  irA('detalle-cliente', { id: v?.clienteId });
+};
 
 // ===== INICIALIZACIÓN =====
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', aplicarTema);
