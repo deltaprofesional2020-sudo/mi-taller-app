@@ -1223,9 +1223,671 @@ window.renderDetalleVehiculo = () => {
   `;
 };
 
+// ===== MÓDULO AGENDA =====
 window.renderAgenda = () => {
-  document.getElementById('pantalla-agenda').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Módulo Agenda — próximamente</p>`;
+  const tab = APP.tabAgenda || 'encurso';
+  const estadosFinales = ['Finalizado','Listo para entregar','Entregado'];
+  const encurso = APP.servicios.filter(s => !estadosFinales.includes(s.estado))
+    .sort((a,b) => {
+      if (!a.fechaEntrega && !b.fechaEntrega) return new Date(b.fecha) - new Date(a.fecha);
+      if (!a.fechaEntrega) return 1;
+      if (!b.fechaEntrega) return -1;
+      return new Date(a.fechaEntrega) - new Date(b.fechaEntrega);
+    });
+  const finalizados = APP.servicios.filter(s => estadosFinales.includes(s.estado))
+    .sort((a,b) => new Date(b.fechaFinalizacion||b.fecha) - new Date(a.fechaFinalizacion||a.fecha));
+
+  const lista = tab === 'encurso' ? encurso : finalizados;
+
+  document.getElementById('pantalla-agenda').innerHTML = `
+    <div class="seccion-header">
+      <h2 class="seccion-titulo" style="color:var(--naranja)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Agenda
+      </h2>
+      <button class="btn btn-naranja btn-sm btn-icon" onclick="abrirFormServicio()" style="border-radius:50%">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+    <div class="tabs">
+      <button class="tab ${tab==='encurso'?'activo':''}" onclick="APP.tabAgenda='encurso';renderAgenda()">En curso (${encurso.length})</button>
+      <button class="tab ${tab==='finalizados'?'activo':''}" onclick="APP.tabAgenda='finalizados';renderAgenda()">Finalizados (${finalizados.length})</button>
+    </div>
+    ${lista.length === 0 ? `<div class="empty"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><p>${tab==='encurso' ? 'No hay servicios en curso' : 'No hay servicios finalizados'}</p></div>` :
+      lista.map(s => {
+        const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+        const c = APP.clientes.find(x => x.id === v?.clienteId);
+        const saldo = getSaldo(s);
+        return `
+        <div class="srv-card p-${(s.prioridad||'media').toLowerCase()}" onclick="irA('detalle-servicio',{id:'${s.id}'})">
+          ${tab==='finalizados' && saldo>0 ? `<div class="srv-card-deuda">DEUDA</div>` : ''}
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+            <div>
+              <div class="srv-card-titulo">${v ? `${v.marca} ${v.modelo}` : 'Vehículo eliminado'}</div>
+              <div class="srv-card-cliente">${c ? c.nombre : '—'}</div>
+              <div class="srv-card-patente">${v?.patente || ''}</div>
+            </div>
+            <span class="badge ${getEstadoBadge(s.estado)}">${s.estado}</span>
+          </div>
+          ${!tab.includes('final') && s.fechaEntrega ? `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:5px 8px;font-size:11px;font-weight:600;color:#c2410c;margin-bottom:6px;display:inline-block">🗓️ Entrega: ${formatFecha(s.fechaEntrega)}</div>` : ''}
+          <div class="srv-card-footer">
+            <span style="font-size:11px;color:var(--texto3)">📅 Ingreso: ${formatFecha(s.fecha)}</span>
+            ${tab==='finalizados' && saldo>0 ? `<span style="font-size:11px;font-weight:700;color:var(--rojo)">Falta: ${formatDinero(saldo)}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('')
+    }
+  `;
 };
+
+// FORM NUEVO SERVICIO
+window.abrirFormServicio = () => {
+  APP._srvForm = { clienteId: '', vehiculoId: '', fecha: new Date().toISOString().split('T')[0], km: '', prioridad: 'Media', tareas: '', repuestos: '', presupuesto: '', precio: '' };
+  APP._srvClienteQuery = '';
+  APP._srvClienteSeleccionado = null;
+  renderFormServicio();
+};
+
+window.renderFormServicio = () => {
+  const f = APP._srvForm;
+  const clientesSugeridos = APP._srvClienteQuery
+    ? APP.clientes.filter(c => c.nombre.toLowerCase().includes(APP._srvClienteQuery.toLowerCase()) || c.telefono.includes(APP._srvClienteQuery))
+    : APP.clientes.sort((a,b) => a.nombre.localeCompare(b.nombre));
+  const vehiculosCliente = APP._srvClienteSeleccionado
+    ? APP.vehiculos.filter(v => v.clienteId === APP._srvClienteSeleccionado.id)
+    : [];
+  const plantillasRapidas = APP.plantillasRapidas || [];
+
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">Nueva ficha de servicio</h3>
+    <p style="font-size:12px;color:var(--texto3);margin-bottom:14px">Los campos con <span style="color:var(--rojo)">*</span> son obligatorios</p>
+
+    <div class="campo">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <label>1. Cliente <span class="obligatorio">*</span></label>
+        <button class="btn btn-secondary btn-sm" onclick="cerrarModal();abrirFormClienteRapido()" style="font-size:11px;padding:4px 8px">+ Nuevo rápido</button>
+      </div>
+      <div class="dropdown">
+        <div class="buscador" style="margin-bottom:0">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="srv-cliente-input" placeholder="Buscar cliente..." value="${APP._srvClienteQuery}"
+            oninput="APP._srvClienteQuery=this.value;APP._srvClienteSeleccionado=null;APP._srvForm.vehiculoId='';renderFormServicio()"
+            onfocus="document.getElementById('srv-dropdown').style.display='block'" />
+          ${APP._srvClienteSeleccionado ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--verde)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+        </div>
+        <div id="srv-dropdown" class="dropdown-lista" style="display:${APP._srvClienteQuery && !APP._srvClienteSeleccionado ? 'block' : 'none'}">
+          ${clientesSugeridos.length === 0 ? '<div class="dropdown-item">No se encontraron clientes</div>' :
+            clientesSugeridos.slice(0,8).map(c => `
+              <div class="dropdown-item" onmousedown="seleccionarClienteSrv('${c.id}')">
+                <strong>${c.nombre}</strong>
+                <span>${c.telefono}</span>
+              </div>`).join('')
+          }
+        </div>
+      </div>
+    </div>
+
+    ${APP._srvClienteSeleccionado ? `
+    <div class="campo">
+      <label>2. Vehículo <span class="obligatorio">*</span></label>
+      ${vehiculosCliente.length === 0 ? `
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;font-size:13px;color:var(--rojo);margin-bottom:8px">Este cliente no tiene vehículos registrados.</div>
+        <button class="btn btn-secondary btn-sm" onclick="cerrarModal();abrirFormVehiculo('${APP._srvClienteSeleccionado.id}')">+ Agregar vehículo</button>
+      ` : `
+        <select onchange="APP._srvForm.vehiculoId=this.value;autocompletarKm(this.value)" style="width:100%;padding:12px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);background:var(--blanco);color:var(--texto);font-size:15px">
+          <option value="">Seleccionar vehículo...</option>
+          ${vehiculosCliente.map(v => `<option value="${v.id}" ${f.vehiculoId===v.id?'selected':''}>${v.patente} — ${v.marca} ${v.modelo}</option>`).join('')}
+        </select>
+      `}
+    </div>` : ''}
+
+    ${f.vehiculoId ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="campo">
+        <label>Fecha ingreso <span class="obligatorio">*</span></label>
+        <input type="date" value="${f.fecha}" onchange="APP._srvForm.fecha=this.value" />
+      </div>
+      <div class="campo">
+        <label>KM actual <span class="obligatorio">*</span></label>
+        <input type="number" id="srv-km" placeholder="50000" value="${f.km}" onchange="APP._srvForm.km=this.value" />
+      </div>
+      <div class="campo">
+        <label>Prioridad <span class="obligatorio">*</span></label>
+        <select onchange="APP._srvForm.prioridad=this.value" style="padding:12px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);background:var(--blanco);color:var(--texto);font-size:15px;width:100%">
+          <option value="Baja" ${f.prioridad==='Baja'?'selected':''}>Baja</option>
+          <option value="Media" ${f.prioridad==='Media'?'selected':''}>Media</option>
+          <option value="Alta" ${f.prioridad==='Alta'?'selected':''}>Alta</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>Estado</label>
+        <input type="text" value="Ingresado" disabled style="padding:12px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);background:var(--fondo);color:var(--texto3);font-size:15px;width:100%" />
+      </div>
+    </div>
+    ${plantillasRapidas.length > 0 ? `
+    <div class="campo">
+      <label>Servicio rápido</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${plantillasRapidas.map(p => `<button class="btn btn-secondary btn-sm" onclick="aplicarPlantillaRapida('${p.id}')" style="font-size:11px">${p.nombre}</button>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="campo">
+      <label>Tareas / Motivo</label>
+      <textarea id="srv-tareas" rows="3" placeholder="Describí el trabajo a realizar..." onchange="APP._srvForm.tareas=this.value">${f.tareas}</textarea>
+    </div>
+    <div class="campo">
+      <label>Repuestos <span class="campo-opcional">(opcional)</span></label>
+      <textarea id="srv-repuestos" rows="2" placeholder="Lista de repuestos necesarios..." onchange="APP._srvForm.repuestos=this.value">${f.repuestos}</textarea>
+    </div>
+    <div class="campo">
+      <label>Presupuesto estimado <span class="campo-opcional">(opcional)</span></label>
+      <input type="number" placeholder="$ 0" value="${f.presupuesto}" onchange="APP._srvForm.presupuesto=this.value" />
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-naranja" onclick="guardarNuevoServicio()">Crear ficha</button>
+    </div>
+    ` : ''}
+  `);
+  if (APP._srvClienteQuery && !APP._srvClienteSeleccionado) {
+    setTimeout(() => { const el = document.getElementById('srv-cliente-input'); if(el) el.focus(); }, 50);
+  }
+};
+
+window.seleccionarClienteSrv = (id) => {
+  const c = APP.clientes.find(x => x.id === id);
+  APP._srvClienteSeleccionado = c;
+  APP._srvClienteQuery = c.nombre;
+  APP._srvForm.vehiculoId = '';
+  renderFormServicio();
+};
+
+window.autocompletarKm = (vehiculoId) => {
+  const v = APP.vehiculos.find(x => x.id === vehiculoId);
+  if (v) { APP._srvForm.km = v.km; APP._srvForm.vehiculoId = vehiculoId; }
+  renderFormServicio();
+};
+
+window.aplicarPlantillaRapida = (id) => {
+  const p = APP.plantillasRapidas.find(x => x.id === id);
+  if (!p) return;
+  APP._srvForm.tareas = (APP._srvForm.tareas ? APP._srvForm.tareas + '\n' : '') + (p.tareas || '');
+  APP._srvForm.repuestos = (APP._srvForm.repuestos ? APP._srvForm.repuestos + '\n' : '') + (p.repuestos || '');
+  renderFormServicio();
+};
+
+window.abrirFormClienteRapido = () => {
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">Alta rápida</h3>
+    <p style="font-size:13px;color:var(--texto2);margin-bottom:14px">Cargá el cliente y su vehículo para continuar con la ficha.</p>
+    <div id="form-rapido-error" class="error-txt" style="display:none"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="campo" style="grid-column:1/-1"><label>Nombre <span class="obligatorio">*</span></label><input type="text" id="fr-nombre" placeholder="Juan Pérez" /></div>
+      <div class="campo" style="grid-column:1/-1"><label>Teléfono <span class="obligatorio">*</span></label><input type="tel" id="fr-telefono" placeholder="1134567890" /></div>
+      <div class="campo"><label>Marca <span class="obligatorio">*</span></label><input type="text" id="fr-marca" placeholder="Toyota" /></div>
+      <div class="campo"><label>Modelo <span class="obligatorio">*</span></label><input type="text" id="fr-modelo" placeholder="Corolla" /></div>
+      <div class="campo"><label>Dominio <span class="obligatorio">*</span></label><input type="text" id="fr-patente" placeholder="ABC123" style="text-transform:uppercase" /></div>
+      <div class="campo"><label>KM <span class="obligatorio">*</span></label><input type="number" id="fr-km" placeholder="50000" /></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="cerrarModal();abrirFormServicio()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarClienteRapido()">Crear y continuar</button>
+    </div>
+  `);
+};
+
+window.guardarClienteRapido = async () => {
+  const nombre = document.getElementById('fr-nombre').value.trim();
+  const telefono = document.getElementById('fr-telefono').value.trim();
+  const marca = document.getElementById('fr-marca').value.trim();
+  const modelo = document.getElementById('fr-modelo').value.trim();
+  const patente = document.getElementById('fr-patente').value.trim().toUpperCase();
+  const km = document.getElementById('fr-km').value;
+  const errDiv = document.getElementById('form-rapido-error');
+
+  if (!nombre || !telefono || !marca || !modelo || !patente || !km) {
+    errDiv.textContent = 'Completá todos los campos obligatorios.';
+    errDiv.style.display = 'block';
+    return;
+  }
+
+  const clienteId = getId();
+  const vehiculoId = (Date.now()+1).toString();
+  await guardarDoc('clientes', clienteId, { id: clienteId, nombre, telefono, domicilio: '', notas: '' });
+  await guardarDoc('vehiculos', vehiculoId, { id: vehiculoId, clienteId, marca, modelo, patente, km: Number(km), fechaIngreso: new Date().toISOString().split('T')[0], notas: '' });
+
+  APP._srvClienteSeleccionado = { id: clienteId, nombre, telefono };
+  APP._srvClienteQuery = nombre;
+  APP._srvForm.vehiculoId = vehiculoId;
+  APP._srvForm.km = km;
+  cerrarModal();
+  mostrarToast('✅ Cliente y vehículo creados.');
+  setTimeout(() => renderFormServicio(), 300);
+};
+
+window.guardarNuevoServicio = async () => {
+  const f = APP._srvForm;
+  if (!APP._srvClienteSeleccionado || !f.vehiculoId || !f.km) {
+    mostrarToast('⚠️ Completá cliente, vehículo y kilometraje.');
+    return;
+  }
+  const id = getId();
+  const srv = { id, vehiculoId: f.vehiculoId, fecha: f.fecha, km: Number(f.km), prioridad: f.prioridad, estado: 'Ingresado', tareas: f.tareas, repuestos: f.repuestos, presupuesto: f.presupuesto, precio: '', pagos: [], fechaEntrega: '', fechaFinalizacion: '' };
+  await guardarDoc('servicios', id, srv);
+  const v = APP.vehiculos.find(x => x.id === f.vehiculoId);
+  if (v) await guardarDoc('vehiculos', v.id, { ...v, km: Number(f.km) });
+  cerrarModal();
+  mostrarToast('✅ Ficha de servicio creada.');
+  irA('detalle-servicio', { id });
+};
+
+// ===== DETALLE SERVICIO =====
+window.renderDetalleServicio = () => {
+  const id = APP.params?.id;
+  const s = APP.servicios.find(x => x.id === id);
+  if (!s) { irA('agenda'); return; }
+  const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+  const c = APP.clientes.find(x => x.id === v?.clienteId);
+  const saldo = getSaldo(s);
+  const montoBase = Number(s.precio || s.presupuesto || 0);
+  const estadosFinales = ['Finalizado','Listo para entregar','Entregado'];
+  const puedeEntrega = ['Presupuesto aprobado','En proceso','Finalizado','Listo para entregar','Entregado'].includes(s.estado);
+
+  document.getElementById('pantalla-detalle-servicio').innerHTML = `
+    <button class="btn-volver" onclick="irA('agenda')">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      Volver
+    </button>
+
+    <div class="card" style="padding:16px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--borde)">
+        <h2 style="font-size:18px;font-weight:700;color:var(--texto);display:flex;align-items:center;gap:8px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--naranja)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          Ficha de trabajo
+        </h2>
+        <button class="btn btn-secondary btn-sm" onclick="abrirEditarServicio('${s.id}')">✏️ Modificar</button>
+      </div>
+
+      <div style="background:var(--fondo);border-radius:10px;padding:12px;margin-bottom:14px;cursor:pointer" onclick="irA('detalle-vehiculo',{id:'${v?.id}'})">
+        <p style="font-size:11px;font-weight:700;color:var(--texto3);text-transform:uppercase;margin-bottom:4px">Vehículo</p>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <p style="font-size:18px;font-weight:700;color:var(--texto)">${v ? `${v.marca} ${v.modelo}` : 'Vehículo eliminado'}</p>
+            <p style="font-size:12px;color:var(--texto3);text-transform:uppercase">${v?.patente || ''} • ${s.km} km</p>
+            <p style="font-size:12px;color:var(--azul);font-weight:500;margin-top:2px">${c?.nombre || '—'}</p>
+          </div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--texto3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#fff7ed;border-radius:10px;padding:12px;margin-bottom:14px">
+        <div><p style="font-size:11px;font-weight:700;color:#c2410c;margin-bottom:2px">📅 Ingreso</p><p style="font-size:14px;font-weight:600;color:var(--texto)">${formatFecha(s.fecha)}</p></div>
+        <div><p style="font-size:11px;font-weight:700;color:#c2410c;margin-bottom:2px">🚀 Entrega est.</p><p style="font-size:14px;font-weight:600;color:var(--texto)">${s.fechaEntrega ? formatFecha(s.fechaEntrega) : '<span style="font-style:italic;color:var(--texto3);font-size:12px">Pend. ppto</span>'}</p></div>
+        ${s.fechaFinalizacion ? `<div style="grid-column:1/-1;background:white;border-radius:8px;padding:8px;border:1px solid #bbf7d0"><p style="font-size:11px;font-weight:700;color:var(--verde);margin-bottom:2px">✅ Finalizado el</p><p style="font-size:14px;font-weight:600;color:var(--texto)">${formatFecha(s.fechaFinalizacion)}</p></div>` : ''}
+        <div><p style="font-size:11px;font-weight:700;color:#c2410c;margin-bottom:4px">Estado</p><span class="badge ${getEstadoBadge(s.estado)}">${s.estado}</span></div>
+        <div><p style="font-size:11px;font-weight:700;color:#c2410c;margin-bottom:4px">Prioridad</p><span class="badge ${s.prioridad==='Alta'?'badge-rojo':s.prioridad==='Media'?'badge-amarillo':'badge-verde'}">${s.prioridad}</span></div>
+      </div>
+
+      ${s.tareas ? `<div style="margin-bottom:12px"><p style="font-size:11px;font-weight:700;color:var(--texto3);text-transform:uppercase;margin-bottom:6px">Tareas / Diagnóstico</p><p style="font-size:14px;color:var(--texto);white-space:pre-wrap;background:var(--fondo);padding:10px;border-radius:8px">${s.tareas}</p></div>` : ''}
+      ${s.repuestos ? `<div style="margin-bottom:12px"><p style="font-size:11px;font-weight:700;color:var(--texto3);text-transform:uppercase;margin-bottom:6px">Repuestos</p><p style="font-size:14px;color:var(--texto);white-space:pre-wrap;background:var(--fondo);padding:10px;border-radius:8px">${s.repuestos}</p></div>` : ''}
+    </div>
+
+    <!-- BLOQUE PRESUPUESTO -->
+    <div class="card" style="padding:16px;margin-bottom:14px">
+      <h3 style="font-weight:700;color:var(--texto);margin-bottom:14px;display:flex;align-items:center;gap:6px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--azul)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Cotización
+      </h3>
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px;margin-bottom:12px">
+        <p style="font-size:11px;font-weight:700;color:#1e40af;text-transform:uppercase;margin-bottom:4px">Presupuesto estimado</p>
+        <p style="font-size:28px;font-weight:800;color:#1e3a8a">${formatDinero(s.presupuesto)}</p>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="enviarPresupuestoWA('${s.id}')" style="font-size:12px">
+            📲 ${s.estado==='Presupuesto enviado' ? 'Reenviar ppto' : 'Enviar ppto por WA'}
+          </button>
+          ${s.estado==='Presupuesto enviado' ? `<button class="btn btn-success btn-sm" onclick="abrirAprobarPpto('${s.id}')" style="font-size:12px">✅ Aprobar presupuesto</button>` : ''}
+        </div>
+      </div>
+
+      <div style="background:var(--fondo);border-radius:10px;padding:14px;position:relative">
+        <div style="position:absolute;top:10px;right:10px;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;${saldo<=0&&montoBase>0?'background:#dcfce7;color:#166534':'background:#fff7ed;color:#c2410c'}">${saldo<=0&&montoBase>0?'COBRADO':'POR COBRAR'}</div>
+        <p style="font-size:11px;font-weight:700;color:var(--texto3);text-transform:uppercase;margin-bottom:4px">Precio final</p>
+        <p style="font-size:32px;font-weight:800;color:var(--texto)">${formatDinero(s.precio || s.presupuesto)}</p>
+
+        ${s.pagos && s.pagos.length > 0 ? `
+        <div style="margin-top:12px;border-top:1px solid var(--borde);padding-top:10px">
+          <p style="font-size:11px;font-weight:700;color:var(--texto3);text-transform:uppercase;margin-bottom:8px">Pagos registrados</p>
+          ${s.pagos.map(p => `
+            <div style="display:flex;justify-content:space-between;align-items:center;background:white;padding:8px 10px;border-radius:8px;border:1px solid var(--borde);margin-bottom:6px">
+              <div><p style="font-size:12px;font-weight:600;color:var(--texto)">${formatFecha(p.fecha)}</p><p style="font-size:11px;color:var(--texto3)">${p.metodo}</p></div>
+              <span style="font-weight:700;color:var(--verde)">${formatDinero(p.monto)}</span>
+            </div>`).join('')}
+        </div>` : ''}
+
+        ${saldo > 0 && montoBase > 0 ? `
+        <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px;margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:13px;font-weight:600;color:#c2410c">Saldo pendiente</span>
+          <span style="font-size:18px;font-weight:800;color:#c2410c">${formatDinero(saldo)}</span>
+        </div>
+        <button class="btn btn-success" style="margin-top:10px" onclick="abrirRegistrarPago('${s.id}')">💳 Registrar pago</button>` : ''}
+      </div>
+    </div>
+
+    <!-- ACCIONES SEGÚN ESTADO -->
+    ${s.estado === 'Finalizado' ? `
+    <button class="btn btn-success" style="margin-bottom:14px;font-size:15px" onclick="generarInformeCierre('${s.id}')">
+      📋 Generar informe de cierre y notificar por WA
+    </button>` : ''}
+
+    ${s.estado === 'Listo para entregar' ? `
+    <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:14px;padding:16px;margin-bottom:14px">
+      <p style="font-weight:700;color:#5b21b6;margin-bottom:10px">🔔 El vehículo está listo para retirar</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-whatsapp" onclick="enviarAvisoListo('${s.id}')">📲 Enviar aviso de retiro</button>
+        <button class="btn btn-secondary" onclick="enviarRecordatorioRetiro('${s.id}')">🔁 Recordatorio de retiro</button>
+      </div>
+    </div>` : ''}
+
+    ${s.estado === 'Entregado' ? `
+    <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:14px;padding:16px;margin-bottom:14px">
+      <h4 style="font-weight:700;color:#3730a3;margin-bottom:12px;display:flex;align-items:center;gap:6px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        Acuse de entrega
+      </h4>
+      ${saldo > 0 ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-bottom:12px"><p style="font-size:13px;font-weight:700;color:var(--rojo)">⚠️ Vehículo entregado con deuda de ${formatDinero(saldo)}</p><button class="btn btn-danger btn-sm" style="margin-top:8px" onclick="enviarRecordatorioDeuda('${s.id}')">📲 Reclamar pago por WA</button></div>` : ''}
+      ${s.acuseEntrega ? `
+        <div style="background:white;border:1px solid var(--borde);border-radius:10px;padding:12px;margin-bottom:12px">
+          <p style="font-size:11px;font-weight:700;color:var(--texto3);margin-bottom:8px">ENTREGA REGISTRADA — ${formatFecha(s.acuseEntrega.fecha)}</p>
+          <p style="font-size:14px;color:var(--texto)"><strong>Nombre:</strong> ${s.acuseEntrega.nombre}</p>
+          <p style="font-size:14px;color:var(--texto)"><strong>DNI:</strong> ${s.acuseEntrega.dni}</p>
+          ${s.acuseEntrega.firma ? `<p style="font-size:12px;color:var(--texto3);margin-top:6px">Firma digital registrada ✅</p><img src="${s.acuseEntrega.firma}" style="border:1px solid var(--borde);border-radius:8px;max-width:100%;margin-top:6px" />` : ''}
+        </div>
+        <button class="btn btn-whatsapp" onclick="enviarResumenEntregaWA('${s.id}')">📲 Enviar resumen de entrega por WA</button>
+      ` : `
+        <div id="form-acuse" style="space-y:10px">
+          <div class="campo"><label>Nombre de quien retira <span class="obligatorio">*</span></label><input type="text" id="acuse-nombre" placeholder="Juan Pérez" /></div>
+          <div class="campo"><label>DNI <span class="obligatorio">*</span></label><input type="number" id="acuse-dni" placeholder="12345678" /></div>
+          <div class="campo">
+            <label>Firma digital <span class="campo-opcional">(opcional)</span></label>
+            <canvas id="canvas-firma" width="340" height="120"></canvas>
+            <button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="limpiarFirma()">Limpiar firma</button>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="btn btn-primary" onclick="guardarAcuse('${s.id}')">Registrar entrega</button>
+          </div>
+        </div>
+      `}
+    </div>` : ''}
+  `;
+
+  if (s.estado === 'Entregado' && !s.acuseEntrega) iniciarFirma();
+};
+
+window.iniciarFirma = () => {
+  const canvas = document.getElementById('canvas-firma');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let dibujando = false;
+  ctx.strokeStyle = '#111827';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+
+  const getPos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - r.left, y: src.clientY - r.top };
+  };
+
+  canvas.addEventListener('mousedown', e => { dibujando = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+  canvas.addEventListener('mousemove', e => { if (!dibujando) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); });
+  canvas.addEventListener('mouseup', () => dibujando = false);
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); dibujando = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+  canvas.addEventListener('touchmove', e => { e.preventDefault(); if (!dibujando) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); });
+  canvas.addEventListener('touchend', () => dibujando = false);
+};
+
+window.limpiarFirma = () => {
+  const canvas = document.getElementById('canvas-firma');
+  if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+};
+
+window.guardarAcuse = async (srvId) => {
+  const nombre = document.getElementById('acuse-nombre')?.value.trim();
+  const dni = document.getElementById('acuse-dni')?.value.trim();
+  if (!nombre || !dni) { mostrarToast('⚠️ Completá nombre y DNI.'); return; }
+  const canvas = document.getElementById('canvas-firma');
+  let firma = '';
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    const datos = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const tieneFirma = datos.some(v => v !== 0);
+    if (tieneFirma) firma = canvas.toDataURL();
+  }
+  const s = APP.servicios.find(x => x.id === srvId);
+  await guardarDoc('servicios', srvId, { ...s, acuseEntrega: { nombre, dni, firma, fecha: new Date().toISOString().split('T')[0] }, estado: 'Entregado' });
+  mostrarToast('✅ Acuse de entrega guardado.');
+  APP.params = { id: srvId };
+  renderDetalleServicio();
+};
+
+window.enviarResumenEntregaWA = (srvId) => {
+  const s = APP.servicios.find(x => x.id === srvId);
+  const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+  const c = APP.clientes.find(x => x.id === v?.clienteId);
+  const msg = `Hola ${c?.nombre},\n\nTe confirmamos la entrega de tu vehículo *${v?.marca} ${v?.modelo} (${v?.patente})*.\n\n📋 *Trabajos realizados:*\n${s.tareas || '—'}\n\n💵 *Total cobrado:* ${formatDinero(s.precio || s.presupuesto)}\n\n✍️ Entregado a: ${s.acuseEntrega?.nombre} (DNI: ${s.acuseEntrega?.dni})\n📅 Fecha: ${formatFecha(s.acuseEntrega?.fecha)}\n\n¡Gracias por confiar en ${APP.config.nombreTaller}!`;
+  abrirWA(c?.telefono, msg);
+};
+
+window.enviarPresupuestoWA = async (srvId) => {
+  const s = APP.servicios.find(x => x.id === srvId);
+  const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+  const c = APP.clientes.find(x => x.id === v?.clienteId);
+  const msg = `Hola ${c?.nombre},\nTe compartimos el presupuesto para tu *${v?.marca} ${v?.modelo}*.\n\n📋 *Trabajos a realizar:*\n${s.tareas || 'Según diagnóstico'}\n\n${s.repuestos ? `🔧 *Repuestos:*\n${s.repuestos}\n\n` : ''}💵 *Total estimado: ${formatDinero(s.presupuesto)}*\n\nPara avanzar, solicitamos una seña.\n\n💳 *Medios de pago:*\n${APP.config.datosPago || 'Consultar'}\n\n¡Saludos!`;
+  await guardarDoc('servicios', srvId, { ...s, estado: 'Presupuesto enviado' });
+  abrirWA(c?.telefono, msg);
+  APP.params = { id: srvId };
+  renderDetalleServicio();
+};
+
+window.abrirAprobarPpto = (srvId) => {
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">Aprobar presupuesto</h3>
+    <p style="font-size:14px;color:var(--texto2);margin-bottom:14px">¿El cliente dejó una seña o adelanto?</p>
+    <div class="campo">
+      <label>Monto de la seña <span class="campo-opcional">(opcional)</span></label>
+      <input type="number" id="monto-sena" placeholder="$ 0" />
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+      <button class="btn btn-primary" onclick="aprobarPpto('${srvId}', true)">✅ Registrar seña y aprobar</button>
+      <button class="btn btn-secondary" onclick="aprobarPpto('${srvId}', false)">Aprobar sin seña</button>
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  `);
+};
+
+window.aprobarPpto = async (srvId, conSena) => {
+  const s = APP.servicios.find(x => x.id === srvId);
+  let pagos = [...(s.pagos || [])];
+  if (conSena) {
+    const monto = Number(document.getElementById('monto-sena')?.value || 0);
+    if (monto > 0) pagos.push({ id: getId(), monto, fecha: new Date().toISOString().split('T')[0], metodo: 'Transferencia' });
+  }
+  const precio = s.precio || s.presupuesto;
+  await guardarDoc('servicios', srvId, { ...s, estado: 'Presupuesto aprobado', precio, pagos });
+  cerrarModal();
+  mostrarToast('✅ Presupuesto aprobado.');
+  APP.params = { id: srvId };
+  renderDetalleServicio();
+};
+
+window.abrirRegistrarPago = (srvId) => {
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">Registrar pago</h3>
+    <div class="campo"><label>Monto <span class="obligatorio">*</span></label><input type="number" id="pago-monto" placeholder="$ 0" /></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="campo"><label>Fecha</label><input type="date" id="pago-fecha" value="${new Date().toISOString().split('T')[0]}" /></div>
+      <div class="campo"><label>Método</label>
+        <select id="pago-metodo" style="width:100%;padding:12px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);background:var(--blanco);color:var(--texto);font-size:15px">
+          <option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-success" onclick="guardarPago('${srvId}')">Guardar pago</button>
+    </div>
+  `);
+};
+
+window.guardarPago = async (srvId) => {
+  const monto = Number(document.getElementById('pago-monto')?.value);
+  if (!monto) { mostrarToast('⚠️ Ingresá un monto.'); return; }
+  const s = APP.servicios.find(x => x.id === srvId);
+  const pago = { id: getId(), monto, fecha: document.getElementById('pago-fecha').value, metodo: document.getElementById('pago-metodo').value };
+  await guardarDoc('servicios', srvId, { ...s, pagos: [...(s.pagos||[]), pago] });
+  cerrarModal();
+  mostrarToast('✅ Pago registrado.');
+  APP.params = { id: srvId };
+  renderDetalleServicio();
+};
+
+window.generarInformeCierre = async (srvId) => {
+  const s = APP.servicios.find(x => x.id === srvId);
+  const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+  const c = APP.clientes.find(x => x.id === v?.clienteId);
+  const hoy = new Date().toISOString().split('T')[0];
+  await guardarDoc('servicios', srvId, { ...s, estado: 'Listo para entregar', fechaFinalizacion: s.fechaFinalizacion || hoy });
+  const msg = `Hola ${c?.nombre},\n\nTu vehículo *${v?.marca} ${v?.modelo} (${v?.patente})* está *LISTO para retirar* 🎉\n\n📋 *Trabajos realizados:*\n${s.tareas || '—'}\n\n💵 *Total: ${formatDinero(s.precio || s.presupuesto)}*\n${getSaldo(s) > 0 ? `⚠️ *Saldo pendiente: ${formatDinero(getSaldo(s))}*\n` : ''}
+\n¡Te esperamos!\n${APP.config.nombreTaller}`;
+  abrirWA(c?.telefono, msg);
+  APP.params = { id: srvId };
+  renderDetalleServicio();
+};
+
+window.enviarAvisoListo = (srvId) => {
+  const s = APP.servicios.find(x => x.id === srvId);
+  const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+  const c = APP.clientes.find(x => x.id === v?.clienteId);
+  const msg = `Hola ${c?.nombre},\n\nTe recordamos que tu *${v?.marca} ${v?.modelo}* está listo para retirar en ${APP.config.nombreTaller}.\n\n${getSaldo(s) > 0 ? `💵 Saldo pendiente: *${formatDinero(getSaldo(s))}*\n\n💳 Medios de pago:\n${APP.config.datosPago || 'Consultar'}\n\n` : ''}¡Te esperamos!`;
+  abrirWA(c?.telefono, msg);
+};
+
+window.enviarRecordatorioRetiro = (srvId) => {
+  const s = APP.servicios.find(x => x.id === srvId);
+  const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+  const c = APP.clientes.find(x => x.id === v?.clienteId);
+  const msg = `Hola ${c?.nombre},\n\nTe enviamos un recordatorio: tu *${v?.marca} ${v?.modelo} (${v?.patente})* continúa esperando ser retirado en ${APP.config.nombreTaller}.\n\n${getSaldo(s) > 0 ? `⚠️ Recordá que tenés un saldo pendiente de *${formatDinero(getSaldo(s))}*.\n\n💳 ${APP.config.datosPago || ''}\n\n` : ''}Por favor coordiná el retiro a la brevedad. ¡Gracias!`;
+  abrirWA(c?.telefono, msg);
+};
+
+window.enviarRecordatorioDeuda = (srvId) => {
+  const s = APP.servicios.find(x => x.id === srvId);
+  const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+  const c = APP.clientes.find(x => x.id === v?.clienteId);
+  const msg = `Hola ${c?.nombre},\n\nTe contactamos de *${APP.config.nombreTaller}* para recordarte que tenés un saldo pendiente de *${formatDinero(getSaldo(s))}* por los trabajos realizados en tu *${v?.marca} ${v?.modelo} (${v?.patente})*.\n\n💳 Podés abonarlo mediante:\n${APP.config.datosPago || 'Consultar'}\n\n¡Gracias!`;
+  abrirWA(c?.telefono, msg);
+};
+
+// EDITAR SERVICIO
+window.abrirEditarServicio = (srvId) => {
+  const s = APP.servicios.find(x => x.id === srvId);
+  if (!s) return;
+  const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+  const puedeEntrega = ['Presupuesto aprobado','En proceso','Finalizado','Listo para entregar','Entregado'].includes(s.estado);
+  const estadosFinales = ['Finalizado','Listo para entregar','Entregado'];
+  const plantillasRapidas = APP.plantillasRapidas || [];
+
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">Modificar ficha</h3>
+    <div class="campo">
+      <label>Estado <span class="obligatorio">*</span></label>
+      <select id="edit-estado" style="width:100%;padding:12px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);background:var(--blanco);color:var(--texto);font-size:15px">
+        ${['Ingresado','Evaluación','Presupuesto enviado','Presupuesto aprobado','En proceso','Finalizado','Listo para entregar','Entregado'].map(e => `<option value="${e}" ${s.estado===e?'selected':''}>${e}</option>`).join('')}
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="campo">
+        <label>Prioridad</label>
+        <select id="edit-prioridad" style="width:100%;padding:12px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);background:var(--blanco);color:var(--texto);font-size:15px">
+          ${['Baja','Media','Alta'].map(p => `<option ${s.prioridad===p?'selected':''}>${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="campo"><label>Fecha ingreso</label><input type="date" id="edit-fecha" value="${s.fecha}" /></div>
+      <div class="campo"><label>KM</label><input type="number" id="edit-km" value="${s.km}" /></div>
+      <div class="campo">
+        <label style="color:${puedeEntrega?'var(--azul)':'var(--texto3)'}">Entrega estimada</label>
+        <input type="date" id="edit-fechaEntrega" value="${s.fechaEntrega||''}" ${puedeEntrega?'':'disabled'} style="opacity:${puedeEntrega?1:0.5}" />
+      </div>
+      ${estadosFinales.includes(s.estado) ? `
+      <div class="campo" style="grid-column:1/-1;background:#f0fdf4;padding:10px;border-radius:8px;border:1px solid #bbf7d0">
+        <label style="color:var(--verde)">Fecha finalización real</label>
+        <input type="date" id="edit-fechaFin" value="${s.fechaFinalizacion||''}" />
+      </div>` : ''}
+    </div>
+    ${plantillasRapidas.length > 0 ? `
+    <div class="campo">
+      <label style="color:var(--naranja)">Aplicar plantilla rápida</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${plantillasRapidas.map(p => `<button class="btn btn-secondary btn-sm" onclick="aplicarPlantillaEdit('${p.id}')" style="font-size:11px">${p.nombre}</button>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="campo"><label>Tareas</label><textarea id="edit-tareas" rows="3">${s.tareas||''}</textarea></div>
+    <div class="campo"><label>Repuestos</label><textarea id="edit-repuestos" rows="2">${s.repuestos||''}</textarea></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="campo"><label style="color:var(--azul)">Presupuesto ($)</label><input type="number" id="edit-presupuesto" value="${s.presupuesto||''}" /></div>
+      <div class="campo"><label style="color:var(--verde)">Precio final ($)</label><input type="number" id="edit-precio" value="${s.precio||''}" /></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarEditServicio('${srvId}')">Guardar cambios</button>
+    </div>
+  `);
+};
+
+window.aplicarPlantillaEdit = (id) => {
+  const p = APP.plantillasRapidas.find(x => x.id === id);
+  if (!p) return;
+  const t = document.getElementById('edit-tareas');
+  const r = document.getElementById('edit-repuestos');
+  if (t) t.value = (t.value ? t.value + '\n' : '') + (p.tareas || '');
+  if (r) r.value = (r.value ? r.value + '\n' : '') + (p.repuestos || '');
+};
+
+window.guardarEditServicio = async (srvId) => {
+  const s = APP.servicios.find(x => x.id === srvId);
+  const estado = document.getElementById('edit-estado').value;
+  const estadosFinales = ['Finalizado','Listo para entregar','Entregado'];
+  const fechaFin = document.getElementById('edit-fechaFin')?.value || (estadosFinales.includes(estado) ? (s.fechaFinalizacion || new Date().toISOString().split('T')[0]) : '');
+  const nuevoKm = Number(document.getElementById('edit-km').value);
+
+  const actualizado = {
+    ...s,
+    estado,
+    prioridad: document.getElementById('edit-prioridad').value,
+    fecha: document.getElementById('edit-fecha').value,
+    km: nuevoKm,
+    fechaEntrega: document.getElementById('edit-fechaEntrega').value,
+    fechaFinalizacion: fechaFin,
+    tareas: document.getElementById('edit-tareas').value,
+    repuestos: document.getElementById('edit-repuestos').value,
+    presupuesto: document.getElementById('edit-presupuesto').value,
+    precio: document.getElementById('edit-precio').value,
+  };
+
+  await guardarDoc('servicios', srvId, actualizado);
+  const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+  if (v && v.km !== nuevoKm) await guardarDoc('vehiculos', v.id, { ...v, km: nuevoKm });
+  cerrarModal();
+  mostrarToast('✅ Servicio actualizado.');
+  APP.params = { id: srvId };
+  renderDetalleServicio();
+};
+
 window.renderFinanzas = () => {
   document.getElementById('pantalla-finanzas').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Módulo Finanzas — próximamente</p>`;
 };
@@ -1235,7 +1897,6 @@ window.renderAlertas = () => {
 window.renderConfiguracion = () => {
   document.getElementById('pantalla-configuracion').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Configuración — próximamente</p>`;
 };
-window.renderDetalleServicio = () => {};
 window.calcularAlertas = () => [];
 
 // ===== BORRADO CON ADVERTENCIA =====
