@@ -1923,8 +1923,135 @@ window.guardarEditServicio = async (srvId) => {
   renderDetalleServicio();
 };
 
+// ===== MÓDULO FINANZAS =====
 window.renderFinanzas = () => {
-  document.getElementById('pantalla-finanzas').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Módulo Finanzas — próximamente</p>`;
+  const tab = APP.tabFinanzas || 'ingresos';
+  const busq = (APP.finanzasBuscador || '').toLowerCase();
+  const mes = APP.finanzasMes || new Date().toISOString().slice(0,7);
+  const tipoDeuda = APP.finanzasTipoDeuda || 'todas';
+
+  // Meses disponibles con pagos
+  const mesesSet = new Set();
+  APP.servicios.forEach(s => (s.pagos||[]).forEach(p => mesesSet.add(p.fecha.slice(0,7))));
+  const mesActual = new Date().toISOString().slice(0,7);
+  if (!mesesSet.has(mesActual)) mesesSet.add(mesActual);
+  const meses = Array.from(mesesSet).sort((a,b) => b.localeCompare(a));
+
+  // INGRESOS
+  let cobros = [];
+  let totalCobrado = 0;
+  APP.servicios.forEach(s => {
+    const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+    const c = APP.clientes.find(x => x.id === v?.clienteId);
+    const pasaBusq = !busq || (c?.nombre||'').toLowerCase().includes(busq);
+    if (!pasaBusq) return;
+    (s.pagos||[]).forEach(p => {
+      const pasoMes = mes === 'todos' || p.fecha.startsWith(mes);
+      if (pasoMes) { cobros.push({ ...p, srv: s, cliente: c, vehiculo: v }); totalCobrado += Number(p.monto); }
+    });
+  });
+  cobros.sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+
+  // DEUDAS
+  let deudores = APP.servicios.filter(s => {
+    const saldo = getSaldo(s);
+    if (saldo <= 0) return false;
+    const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+    const c = APP.clientes.find(x => x.id === v?.clienteId);
+    if (busq && !(c?.nombre||'').toLowerCase().includes(busq)) return false;
+    const base = Number(s.precio || s.presupuesto || 0);
+    if (tipoDeuda === 'parcial' && saldo >= base) return false;
+    if (tipoDeuda === 'total' && saldo < base) return false;
+    return true;
+  });
+  const totalDeuda = deudores.reduce((a,s) => a + getSaldo(s), 0);
+
+  const nombreMes = (m) => {
+    if (m === 'todos') return 'Todos los meses';
+    const [y, mo] = m.split('-');
+    return new Date(y, mo-1).toLocaleString('es-AR', {month:'long'}).replace(/^\w/, c => c.toUpperCase()) + ' ' + y;
+  };
+
+  document.getElementById('pantalla-finanzas').innerHTML = `
+    <div class="seccion-header">
+      <h2 class="seccion-titulo" style="color:var(--verde)">
+        <svg viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        Módulo financiero
+      </h2>
+    </div>
+
+    <div class="tabs">
+      <button class="tab ${tab==='ingresos'?'activo':''}" onclick="APP.tabFinanzas='ingresos';renderFinanzas()">Ingresos</button>
+      <button class="tab ${tab==='deudas'?'activo':''}" onclick="APP.tabFinanzas='deudas';renderFinanzas()">Por cobrar</button>
+    </div>
+
+    <div style="background:var(--blanco);border:1px solid var(--borde);border-radius:var(--radio-sm);padding:12px;margin-bottom:14px">
+      <p style="font-size:11px;font-weight:700;color:var(--texto3);text-transform:uppercase;margin-bottom:10px">Filtros</p>
+      <div class="buscador" style="margin-bottom:10px">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Buscar por nombre de cliente..." value="${APP.finanzasBuscador||''}" oninput="APP.finanzasBuscador=this.value;renderFinanzas()" />
+      </div>
+      ${tab === 'ingresos' ? `
+        <select onchange="APP.finanzasMes=this.value;renderFinanzas()" style="width:100%;padding:10px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);background:var(--blanco);color:var(--texto);font-size:14px">
+          <option value="todos" ${mes==='todos'?'selected':''}>Ver todos los meses</option>
+          ${meses.map(m => `<option value="${m}" ${mes===m?'selected':''}>${nombreMes(m)}</option>`).join('')}
+        </select>
+      ` : `
+        <div style="display:flex;background:#f3f4f6;border-radius:10px;padding:3px;gap:2px">
+          ${[['todas','Todas'],['parcial','Saldo parcial'],['total','Impago total']].map(([v,l]) => `
+            <button onclick="APP.finanzasTipoDeuda='${v}';renderFinanzas()" style="flex:1;padding:6px 4px;font-size:11px;font-weight:600;border:none;cursor:pointer;border-radius:8px;transition:all 0.15s;background:${tipoDeuda===v?'white':'transparent'};color:${tipoDeuda===v?'var(--rojo)':'var(--texto3)'};box-shadow:${tipoDeuda===v?'var(--sombra)':'none'}">${l}</button>
+          `).join('')}
+        </div>
+      `}
+    </div>
+
+    ${tab === 'ingresos' ? `
+      <div class="fin-total-box" style="background:var(--verde)">
+        <p class="fin-total-label">Total cobrado — ${nombreMes(mes)}</p>
+        <p class="fin-total-monto">${formatDinero(totalCobrado)}</p>
+      </div>
+      ${cobros.length === 0 ? `<div class="empty"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><p>No hay ingresos en este período</p></div>` :
+        cobros.map(p => `
+          <div class="lista-item" onclick="irA('detalle-servicio',{id:'${p.srv.id}'})">
+            <div style="flex:1">
+              <p style="font-weight:700;color:var(--texto);font-size:15px">${p.cliente?.nombre || 'Desconocido'}</p>
+              <p style="font-size:12px;color:var(--texto2)">${p.vehiculo?.marca} ${p.vehiculo?.modelo} (${p.vehiculo?.patente})</p>
+              <p style="font-size:11px;color:var(--texto3);margin-top:2px">${formatFecha(p.fecha)} • ${p.metodo}</p>
+            </div>
+            <span style="font-weight:800;color:var(--verde);font-size:17px">+${formatDinero(p.monto)}</span>
+          </div>`).join('')
+      }
+    ` : `
+      <div class="fin-total-box" style="background:var(--rojo)">
+        <p class="fin-total-label">Total a cobrar</p>
+        <p class="fin-total-monto">${formatDinero(totalDeuda)}</p>
+      </div>
+      ${deudores.length === 0 ? `<div class="empty"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><p>No hay deudas pendientes</p></div>` :
+        deudores.map(s => {
+          const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+          const c = APP.clientes.find(x => x.id === v?.clienteId);
+          const saldo = getSaldo(s);
+          const base = Number(s.precio || s.presupuesto || 0);
+          const esParcial = saldo < base;
+          return `
+          <div class="lista-item" onclick="irA('detalle-servicio',{id:'${s.id}'})">
+            <div style="flex:1">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                <p style="font-weight:700;color:var(--texto);font-size:15px">${c?.nombre || '—'}</p>
+                <span class="badge ${getEstadoBadge(s.estado)}" style="font-size:10px">${s.estado}</span>
+              </div>
+              <p style="font-size:12px;color:var(--texto2)">${v?.marca} ${v?.modelo}</p>
+              <p style="font-size:11px;color:var(--texto3);margin-top:2px">Total: ${formatDinero(base)} • ${esParcial ? 'Saldo parcial' : 'Impago total'}</p>
+            </div>
+            <div style="text-align:right">
+              <p style="font-size:10px;font-weight:700;color:var(--rojo);text-transform:uppercase">Deuda</p>
+              <span style="font-weight:800;color:var(--rojo);font-size:17px">${formatDinero(saldo)}</span>
+            </div>
+          </div>`;
+        }).join('')
+      }
+    `}
+  `;
 };
 
 // ELIMINAR SERVICIO CON PIN
