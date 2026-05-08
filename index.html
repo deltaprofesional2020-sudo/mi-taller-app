@@ -2028,9 +2028,9 @@ window.renderFinanzas = () => {
         </select>
       ` : `
         <div style="display:flex;background:#f3f4f6;border-radius:10px;padding:3px;gap:2px" id="filtros-deuda">
-          <button class="filtro-deuda ${tipoDeuda==='todas'?'activo':''}" onclick="APP.finanzasTipoDeuda='todas';document.querySelectorAll('.filtro-deuda').forEach(b=>b.classList.remove('activo'));this.classList.add('activo');renderListaFinanzas()">Todas</button>
-          <button class="filtro-deuda ${tipoDeuda==='parcial'?'activo':''}" onclick="APP.finanzasTipoDeuda='parcial';document.querySelectorAll('.filtro-deuda').forEach(b=>b.classList.remove('activo'));this.classList.add('activo');renderListaFinanzas()">Saldo parcial</button>
-          <button class="filtro-deuda ${tipoDeuda==='total'?'activo':''}" onclick="APP.finanzasTipoDeuda='total';document.querySelectorAll('.filtro-deuda').forEach(b=>b.classList.remove('activo'));this.classList.add('activo');renderListaFinanzas()">Impago total</button>
+          <button class="filtro-deuda ${tipoDeuda==='todas'?'activo':''}" onclick="APP.finanzasTipoDeuda='todas';actualizarFiltrosDeuda();renderListaFinanzas()">Todas</button>
+          <button class="filtro-deuda ${tipoDeuda==='parcial'?'activo':''}" onclick="APP.finanzasTipoDeuda='parcial';actualizarFiltrosDeuda();renderListaFinanzas()">Saldo parcial</button>
+          <button class="filtro-deuda ${tipoDeuda==='total'?'activo':''}" onclick="APP.finanzasTipoDeuda='total';actualizarFiltrosDeuda();renderListaFinanzas()">Impago total</button>
         </div>
       `}
     </div>
@@ -2040,6 +2040,13 @@ window.renderFinanzas = () => {
   `;
 
   renderListaFinanzas();
+};
+
+window.actualizarFiltrosDeuda = () => {
+  const val = APP.finanzasTipoDeuda || 'todas';
+  const mapa = { todas: 0, parcial: 1, total: 2 };
+  const btns = document.querySelectorAll('.filtro-deuda');
+  btns.forEach((b, i) => b.classList.toggle('activo', i === mapa[val]));
 };
 
 window.renderListaFinanzas = () => {
