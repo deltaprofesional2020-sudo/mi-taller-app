@@ -820,9 +820,9 @@ window.renderHome = () => {
   const estadosFinales = ['Finalizado', 'Listo para entregar', 'Entregado'];
   const srvsPendientes = APP.servicios.filter(s => !estadosFinales.includes(s.estado));
   const srvsFinalizados = APP.servicios.filter(s => estadosFinales.includes(s.estado));
-  let porCobrar = 0, countCobrar = 0, proyeccion = 0;
+  let porCobrar = 0, countCobrar = 0, proyeccion = 0, countProyeccion = 0;
   srvsFinalizados.forEach(s => { const sd = getSaldo(s); if (sd > 0) { porCobrar += sd; countCobrar++; } });
-  srvsPendientes.forEach(s => { proyeccion += Number(s.precio || s.presupuesto || 0); });
+  srvsPendientes.forEach(s => { const sd = getSaldo(s); if (sd > 0) { proyeccion += sd; countProyeccion++; } });
 
   const color = APP.config.colorFondo || '#2563eb';
   document.getElementById('pantalla-home').innerHTML = `
@@ -854,7 +854,7 @@ window.renderHome = () => {
           <div class="fin-sub">Trabajos finalizados</div>
         </div>
         <div class="fin-celda" onclick="irA('finanzas')">
-          <div class="fin-label" style="color:var(--azul)">Proyección (${srvsPendientes.length})</div>
+          <div class="fin-label" style="color:var(--azul)">Proyección (${countProyeccion})</div>
           <div class="fin-monto">${APP.mostrarFinanzas ? formatDinero(proyeccion) : '• • • •'}</div>
           <div class="fin-sub">En el taller</div>
         </div>
@@ -889,20 +889,32 @@ window.toggleFinanzas = () => {
 window.renderDirectorio = () => {
   const tab = APP.tabDirectorio || 'clientes';
   const busq = APP.directorioBuscador || '';
-  const clientesFiltrados = APP.clientes
-    .filter(c => c.nombre.toLowerCase().includes(busq.toLowerCase()) || (c.telefono||'').includes(busq))
-    .sort((a,b) => a.nombre.localeCompare(b.nombre));
-  const vehiculosFiltrados = APP.vehiculos
-    .filter(v => (v.patente||'').toLowerCase().includes(busq.toLowerCase()) || (v.marca||'').toLowerCase().includes(busq.toLowerCase()) || (v.modelo||'').toLowerCase().includes(busq.toLowerCase()))
-    .sort((a,b) => (a.marca+a.modelo).localeCompare(b.marca+b.modelo));
 
-  document.getElementById('pantalla-directorio').innerHTML = `
-    <div class="tabs">
-      <button class="tab ${tab==='clientes'?'activo':''}" onclick="setTabDirectorio('clientes')">Clientes (${APP.clientes.length})</button>
-      <button class="tab ${tab==='vehiculos'?'activo':''}" onclick="setTabDirectorio('vehiculos')">Vehículos (${APP.vehiculos.length})</button>
-    </div>
+  // Solo re-renderiza todo si cambia la tab o es la primera vez
+  const pantallaEl = document.getElementById('pantalla-directorio');
+  const yaRenderizado = pantallaEl.querySelector('.tabs');
 
-    ${tab === 'clientes' ? `
+  if (!yaRenderizado) {
+    pantallaEl.innerHTML = `
+      <div class="tabs" id="dir-tabs"></div>
+      <div id="dir-header"></div>
+      <div class="buscador" id="dir-buscador-wrap">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="dir-buscador" placeholder="" oninput="APP.directorioBuscador=this.value;renderListaDirectorio()" />
+      </div>
+      <div id="dir-lista"></div>
+    `;
+  }
+
+  // Actualizar tabs
+  document.getElementById('dir-tabs').innerHTML = `
+    <button class="tab ${tab==='clientes'?'activo':''}" onclick="setTabDirectorio('clientes')">Clientes (${APP.clientes.length})</button>
+    <button class="tab ${tab==='vehiculos'?'activo':''}" onclick="setTabDirectorio('vehiculos')">Vehículos (${APP.vehiculos.length})</button>
+  `;
+
+  // Actualizar header
+  if (tab === 'clientes') {
+    document.getElementById('dir-header').innerHTML = `
       <div class="seccion-header">
         <h2 class="seccion-titulo" style="color:var(--azul)">
           <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -911,32 +923,11 @@ window.renderDirectorio = () => {
         <button class="btn btn-primary btn-sm btn-icon" onclick="abrirFormCliente()" style="border-radius:50%">
           <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
-      </div>
-      <div class="buscador">
-        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" placeholder="Buscar por nombre o teléfono..." value="${busq}" oninput="APP.directorioBuscador=this.value;renderDirectorio()" />
-      </div>
-      ${clientesFiltrados.length === 0 ? `
-        <div class="empty">
-          <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-          <p>${busq ? 'No se encontraron clientes' : 'Aún no hay clientes registrados'}</p>
-        </div>` : 
-        clientesFiltrados.map(c => `
-          <div class="lista-item" onclick="irA('detalle-cliente',{id:'${c.id}'})">
-            <div style="display:flex;align-items:center;gap:12px;flex:1">
-              <div style="width:40px;height:40px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              </div>
-              <div>
-                <div class="lista-item-titulo">${c.nombre}</div>
-                <div class="lista-item-sub">${c.telefono || 'Sin teléfono'}</div>
-                <div class="lista-item-sub2">${APP.vehiculos.filter(v=>v.clienteId===c.id).length} vehículo(s)</div>
-              </div>
-            </div>
-            <div class="lista-chevron"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
-          </div>`).join('')
-      }
-    ` : `
+      </div>`;
+    const inp = document.getElementById('dir-buscador');
+    if (inp) { inp.placeholder = 'Buscar por nombre o teléfono...'; if (document.activeElement !== inp) inp.value = busq; }
+  } else {
+    document.getElementById('dir-header').innerHTML = `
       <div class="seccion-header">
         <h2 class="seccion-titulo" style="color:var(--morado)">
           <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
@@ -945,36 +936,70 @@ window.renderDirectorio = () => {
         <button class="btn btn-primary btn-sm btn-icon" onclick="abrirFormVehiculo()" style="border-radius:50%;background:var(--morado)">
           <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
-      </div>
-      <div class="buscador">
-        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" placeholder="Buscar por patente, marca o modelo..." value="${busq}" oninput="APP.directorioBuscador=this.value;renderDirectorio()" />
-      </div>
-      ${vehiculosFiltrados.length === 0 ? `
-        <div class="empty">
-          <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-          <p>${busq ? 'No se encontraron vehículos' : 'Aún no hay vehículos registrados'}</p>
-        </div>` :
-        vehiculosFiltrados.map(v => {
-          const dueno = APP.clientes.find(c => c.id === v.clienteId);
-          return `
-          <div class="lista-item" onclick="irA('detalle-vehiculo',{id:'${v.id}'})">
-            <div style="display:flex;align-items:center;gap:12px;flex:1">
-              <div style="width:40px;height:40px;border-radius:50%;background:#f5f3ff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-              </div>
-              <div>
-                <div class="lista-item-titulo">${v.marca} ${v.modelo}</div>
-                <div class="lista-item-sub" style="text-transform:uppercase;letter-spacing:0.05em">${v.patente}</div>
-                <div class="lista-item-sub2" style="color:var(--azul)">Dueño: ${dueno ? dueno.nombre : 'Desconocido'}</div>
-              </div>
+      </div>`;
+    const inp = document.getElementById('dir-buscador');
+    if (inp) { inp.placeholder = 'Buscar por patente, marca o modelo...'; if (document.activeElement !== inp) inp.value = busq; }
+  }
+
+  renderListaDirectorio();
+};
+
+window.renderListaDirectorio = () => {
+  const tab = APP.tabDirectorio || 'clientes';
+  const busq = APP.directorioBuscador || '';
+  const listaEl = document.getElementById('dir-lista');
+  if (!listaEl) return;
+
+  if (tab === 'clientes') {
+    const clientesFiltrados = APP.clientes
+      .filter(c => c.nombre.toLowerCase().includes(busq.toLowerCase()) || (c.telefono||'').includes(busq))
+      .sort((a,b) => a.nombre.localeCompare(b.nombre));
+    listaEl.innerHTML = clientesFiltrados.length === 0 ? `
+      <div class="empty">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        <p>${busq ? 'No se encontraron clientes' : 'Aún no hay clientes registrados'}</p>
+      </div>` :
+      clientesFiltrados.map(c => `
+        <div class="lista-item" onclick="irA('detalle-cliente',{id:'${c.id}'})">
+          <div style="display:flex;align-items:center;gap:12px;flex:1">
+            <div style="width:40px;height:40px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </div>
-            <div class="lista-chevron"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
-          </div>`;
-        }).join('')
-      }
-    `}
-  `;
+            <div>
+              <div class="lista-item-titulo">${c.nombre}</div>
+              <div class="lista-item-sub">${c.telefono || 'Sin teléfono'}</div>
+              <div class="lista-item-sub2">${APP.vehiculos.filter(v=>v.clienteId===c.id).length} vehículo(s)</div>
+            </div>
+          </div>
+          <div class="lista-chevron"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </div>`).join('');
+  } else {
+    const vehiculosFiltrados = APP.vehiculos
+      .filter(v => (v.patente||'').toLowerCase().includes(busq.toLowerCase()) || (v.marca||'').toLowerCase().includes(busq.toLowerCase()) || (v.modelo||'').toLowerCase().includes(busq.toLowerCase()))
+      .sort((a,b) => (a.marca+a.modelo).localeCompare(b.marca+b.modelo));
+    listaEl.innerHTML = vehiculosFiltrados.length === 0 ? `
+      <div class="empty">
+        <svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        <p>${busq ? 'No se encontraron vehículos' : 'Aún no hay vehículos registrados'}</p>
+      </div>` :
+      vehiculosFiltrados.map(v => {
+        const dueno = APP.clientes.find(c => c.id === v.clienteId);
+        return `
+        <div class="lista-item" onclick="irA('detalle-vehiculo',{id:'${v.id}'})">
+          <div style="display:flex;align-items:center;gap:12px;flex:1">
+            <div style="width:40px;height:40px;border-radius:50%;background:#f5f3ff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+            </div>
+            <div>
+              <div class="lista-item-titulo">${v.marca} ${v.modelo}</div>
+              <div class="lista-item-sub" style="text-transform:uppercase;letter-spacing:0.05em">${v.patente}</div>
+              <div class="lista-item-sub2" style="color:var(--azul)">Dueño: ${dueno ? dueno.nombre : 'Desconocido'}</div>
+            </div>
+          </div>
+          <div class="lista-chevron"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </div>`;
+      }).join('');
+  }
 };
 
 window.setTabDirectorio = (tab) => {
@@ -1559,7 +1584,7 @@ window.renderDetalleServicio = () => {
         ${s.pagos && s.pagos.length > 0 ? `
         <div style="margin-top:12px;border-top:1px solid var(--borde);padding-top:10px">
           <p style="font-size:11px;font-weight:700;color:var(--texto3);text-transform:uppercase;margin-bottom:8px">Pagos registrados</p>
-          ${s.pagos.map(p => `
+          ${[...s.pagos].reverse().map(p => `
             <div style="display:flex;justify-content:space-between;align-items:center;background:white;padding:8px 10px;border-radius:8px;border:1px solid var(--borde);margin-bottom:6px">
               <div><p style="font-size:12px;font-weight:600;color:var(--texto)">${formatFecha(p.fecha)}</p><p style="font-size:11px;color:var(--texto3)">${p.metodo}</p></div>
               <span style="font-weight:700;color:var(--verde)">${formatDinero(p.monto)}</span>
@@ -1989,72 +2014,101 @@ window.renderFinanzas = () => {
       <p style="font-size:11px;font-weight:700;color:var(--texto3);text-transform:uppercase;margin-bottom:10px">Filtros</p>
       <div class="buscador" style="margin-bottom:10px">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" placeholder="Buscar por nombre de cliente..." value="${APP.finanzasBuscador||''}" oninput="APP.finanzasBuscador=this.value;renderFinanzas()" />
+        <input type="text" id="fin-buscador" placeholder="Buscar por nombre de cliente..." value="${APP.finanzasBuscador||''}" oninput="APP.finanzasBuscador=this.value;renderListaFinanzas()" />
       </div>
       ${tab === 'ingresos' ? `
-        <select onchange="APP.finanzasMes=this.value;renderFinanzas()" style="width:100%;padding:10px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);background:var(--blanco);color:var(--texto);font-size:14px">
+        <select onchange="APP.finanzasMes=this.value;renderListaFinanzas()" style="width:100%;padding:10px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);background:var(--blanco);color:var(--texto);font-size:14px">
           <option value="todos" ${mes==='todos'?'selected':''}>Ver todos los meses</option>
           ${meses.map(m => `<option value="${m}" ${mes===m?'selected':''}>${nombreMes(m)}</option>`).join('')}
         </select>
       ` : `
         <div style="display:flex;background:#f3f4f6;border-radius:10px;padding:3px;gap:2px">
           ${[['todas','Todas'],['parcial','Saldo parcial'],['total','Impago total']].map(([v,l]) => `
-            <button onclick="APP.finanzasTipoDeuda='${v}';renderFinanzas()" style="flex:1;padding:6px 4px;font-size:11px;font-weight:600;border:none;cursor:pointer;border-radius:8px;transition:all 0.15s;background:${tipoDeuda===v?'white':'transparent'};color:${tipoDeuda===v?'var(--rojo)':'var(--texto3)'};box-shadow:${tipoDeuda===v?'var(--sombra)':'none'}">${l}</button>
+            <button onclick="APP.finanzasTipoDeuda='${v}';renderListaFinanzas()" style="flex:1;padding:6px 4px;font-size:11px;font-weight:600;border:none;cursor:pointer;border-radius:8px;transition:all 0.15s;background:${tipoDeuda===v?'white':'transparent'};color:${tipoDeuda===v?'var(--rojo)':'var(--texto3)'};box-shadow:${tipoDeuda===v?'var(--sombra)':'none'}">${l}</button>
           `).join('')}
         </div>
       `}
     </div>
 
-    ${tab === 'ingresos' ? `
-      <div class="fin-total-box" style="background:var(--verde)">
-        <p class="fin-total-label">Total cobrado — ${nombreMes(mes)}</p>
-        <p class="fin-total-monto">${formatDinero(totalCobrado)}</p>
-      </div>
-      ${cobros.length === 0 ? `<div class="empty"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><p>No hay ingresos en este período</p></div>` :
-        cobros.map(p => `
-          <div class="lista-item" onclick="irA('detalle-servicio',{id:'${p.srv.id}'})">
-            <div style="flex:1">
-              <p style="font-weight:700;color:var(--texto);font-size:15px">${p.cliente?.nombre || 'Desconocido'}</p>
-              <p style="font-size:12px;color:var(--texto2)">${p.vehiculo?.marca} ${p.vehiculo?.modelo} (${p.vehiculo?.patente})</p>
-              <p style="font-size:11px;color:var(--texto3);margin-top:2px">${formatFecha(p.fecha)} • ${p.metodo}</p>
-            </div>
-            <span style="font-weight:800;color:var(--verde);font-size:17px">+${formatDinero(p.monto)}</span>
-          </div>`).join('')
-      }
-    ` : `
-      <div class="fin-total-box" style="background:var(--rojo)">
-        <p class="fin-total-label">Total a cobrar</p>
-        <p class="fin-total-monto">${formatDinero(totalDeuda)}</p>
-      </div>
-      ${deudores.length === 0 ? `<div class="empty"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><p>No hay deudas pendientes</p></div>` :
-        deudores.map(s => {
-          const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
-          const c = APP.clientes.find(x => x.id === v?.clienteId);
-          const saldo = getSaldo(s);
-          const base = Number(s.precio || s.presupuesto || 0);
-          const esParcial = saldo < base;
-          return `
-          <div class="lista-item" onclick="irA('detalle-servicio',{id:'${s.id}'})">
-            <div style="flex:1">
-              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-                <p style="font-weight:700;color:var(--texto);font-size:15px">${c?.nombre || '—'}</p>
-                <span class="badge ${getEstadoBadge(s.estado)}" style="font-size:10px">${s.estado}</span>
-              </div>
-              <p style="font-size:12px;color:var(--texto2)">${v?.marca} ${v?.modelo}</p>
-              <p style="font-size:11px;color:var(--texto3);margin-top:2px">Total: ${formatDinero(base)} • ${esParcial ? 'Saldo parcial' : 'Impago total'}</p>
-            </div>
-            <div style="text-align:right">
-              <p style="font-size:10px;font-weight:700;color:var(--rojo);text-transform:uppercase">Deuda</p>
-              <span style="font-weight:800;color:var(--rojo);font-size:17px">${formatDinero(saldo)}</span>
-            </div>
-          </div>`;
-        }).join('')
-      }
-    `}
+    <div id="fin-total" class="fin-total-box"></div>
+    <div id="fin-lista"></div>
   `;
+
+  renderListaFinanzas();
 };
 
-// ELIMINAR SERVICIO CON PIN
+window.renderListaFinanzas = () => {
+  const tab = APP.tabFinanzas || 'ingresos';
+  const busq = (APP.finanzasBuscador || '').toLowerCase();
+  const mes = APP.finanzasMes || new Date().toISOString().slice(0,7);
+  const tipoDeuda = APP.finanzasTipoDeuda || 'todas';
+  const listaEl = document.getElementById('fin-lista');
+  const totalEl = document.getElementById('fin-total');
+  if (!listaEl || !totalEl) return;
+
+  if (tab === 'ingresos') {
+    let cobros = [];
+    let totalCobrado = 0;
+    APP.servicios.forEach(s => {
+      const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+      const c = APP.clientes.find(x => x.id === v?.clienteId);
+      if (busq && !(c?.nombre||'').toLowerCase().includes(busq)) return;
+      (s.pagos||[]).forEach(p => {
+        if (mes === 'todos' || p.fecha.startsWith(mes)) { cobros.push({ ...p, srv: s, cliente: c, vehiculo: v }); totalCobrado += Number(p.monto); }
+      });
+    });
+    cobros.sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+    totalEl.innerHTML = `<p class="fin-total-label">Total cobrado</p><p class="fin-total-monto">${formatDinero(totalCobrado)}</p>`;
+    totalEl.style.background = 'var(--verde)';
+    listaEl.innerHTML = cobros.length === 0 ? `<div class="empty"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><p>No hay ingresos en este período</p></div>` :
+      cobros.map(p => `
+        <div class="lista-item" onclick="irA('detalle-servicio',{id:'${p.srv.id}'})">
+          <div style="flex:1">
+            <p style="font-weight:700;color:var(--texto);font-size:15px">${p.cliente?.nombre || 'Desconocido'}</p>
+            <p style="font-size:12px;color:var(--texto2)">${p.vehiculo?.marca} ${p.vehiculo?.modelo} (${p.vehiculo?.patente})</p>
+            <p style="font-size:11px;color:var(--texto3);margin-top:2px">${formatFecha(p.fecha)} • ${p.metodo}</p>
+          </div>
+          <span style="font-weight:800;color:var(--verde);font-size:17px">+${formatDinero(p.monto)}</span>
+        </div>`).join('');
+  } else {
+    let deudores = APP.servicios.filter(s => {
+      const saldo = getSaldo(s);
+      if (saldo <= 0) return false;
+      const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+      const c = APP.clientes.find(x => x.id === v?.clienteId);
+      if (busq && !(c?.nombre||'').toLowerCase().includes(busq)) return false;
+      const base = Number(s.precio || s.presupuesto || 0);
+      if (tipoDeuda === 'parcial' && saldo >= base) return false;
+      if (tipoDeuda === 'total' && saldo < base) return false;
+      return true;
+    });
+    const totalDeuda = deudores.reduce((a,s) => a + getSaldo(s), 0);
+    totalEl.innerHTML = `<p class="fin-total-label">Total a cobrar</p><p class="fin-total-monto">${formatDinero(totalDeuda)}</p>`;
+    totalEl.style.background = 'var(--rojo)';
+    listaEl.innerHTML = deudores.length === 0 ? `<div class="empty"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><p>No hay deudas pendientes</p></div>` :
+      deudores.map(s => {
+        const v = APP.vehiculos.find(x => x.id === s.vehiculoId);
+        const c = APP.clientes.find(x => x.id === v?.clienteId);
+        const saldo = getSaldo(s);
+        const base = Number(s.precio || s.presupuesto || 0);
+        return `
+        <div class="lista-item" onclick="irA('detalle-servicio',{id:'${s.id}'})">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+              <p style="font-weight:700;color:var(--texto);font-size:15px">${c?.nombre || '—'}</p>
+              <span class="badge ${getEstadoBadge(s.estado)}" style="font-size:10px">${s.estado}</span>
+            </div>
+            <p style="font-size:12px;color:var(--texto2)">${v?.marca} ${v?.modelo}</p>
+            <p style="font-size:11px;color:var(--texto3);margin-top:2px">Total: ${formatDinero(base)} • ${saldo < base ? 'Saldo parcial' : 'Impago total'}</p>
+          </div>
+          <div style="text-align:right">
+            <p style="font-size:10px;font-weight:700;color:var(--rojo);text-transform:uppercase">Deuda</p>
+            <span style="font-weight:800;color:var(--rojo);font-size:17px">${formatDinero(saldo)}</span>
+          </div>
+        </div>`;
+      }).join('');
+  }
+};
 window.confirmarEliminarServicio = (srvId) => {
   const s = APP.servicios.find(x => x.id === srvId);
   const v = APP.vehiculos.find(x => x.id === s?.vehiculoId);
