@@ -853,12 +853,12 @@ window.renderHome = () => {
         </button>
       </div>
       <div class="fin-grid">
-        <div class="fin-celda" onclick="irA('finanzas')">
+        <div class="fin-celda" onclick="APP.tabFinanzas='deudas';irA('finanzas')">
           <div class="fin-label" style="color:var(--rojo)">Por cobrar (${countCobrar})</div>
           <div class="fin-monto">${APP.mostrarFinanzas ? formatDinero(porCobrar) : '• • • •'}</div>
           <div class="fin-sub">Trabajos finalizados</div>
         </div>
-        <div class="fin-celda" onclick="irA('finanzas')">
+        <div class="fin-celda" onclick="APP.tabFinanzas='deudas';irA('finanzas')">
           <div class="fin-label" style="color:var(--azul)">Proyección (${countProyeccion})</div>
           <div class="fin-monto">${APP.mostrarFinanzas ? formatDinero(proyeccion) : '• • • •'}</div>
           <div class="fin-sub">En el taller</div>
@@ -2165,13 +2165,89 @@ window.ejecutarEliminarServicio = async (srvId) => {
   mostrarToast('🗑️ Servicio eliminado.');
   irA('agenda');
 };
-window.renderAlertas = () => {
-  document.getElementById('pantalla-alertas').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Centro de Alertas — próximamente</p>`;
+// ===== MÓDULO ALERTAS =====
+window.calcularAlertas = () => {
+  const alertas = [];
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const hoy = new Date();
+  APP.vehiculos.forEach(vehiculo => {
+    const srvs = APP.servicios.filter(s => s.vehiculoId === vehiculo.id && s.km).sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
+    if (srvs.length < 2) return;
+    const primero = srvs[0], ultimo = srvs[srvs.length - 1];
+    const diasTotal = (new Date(ultimo.fecha) - new Date(primero.fecha)) / msPerDay;
+    const kmRecorridos = Number(ultimo.km) - Number(primero.km);
+    const kmPorDia = diasTotal > 0 && kmRecorridos > 0 ? kmRecorridos / diasTotal : 15;
+    (APP.plantillasPredictivas || []).forEach(plantilla => {
+      if (!plantilla.servicio || !plantilla.kmLimite) return;
+      const ultimoMto = [...srvs].reverse().find(s => (s.tareas || '').toLowerCase().includes((plantilla.servicio || '').toLowerCase()));
+      if (!ultimoMto) return;
+      const kmObjetivo = Number(ultimoMto.km) + Number(plantilla.kmLimite);
+      const kmActual = Number(vehiculo.km || ultimo.km);
+      if (kmActual >= kmObjetivo) return;
+      const diasRestantes = Math.round((kmObjetivo - kmActual) / kmPorDia);
+      if (diasRestantes > 90) return;
+      const fechaEstimada = new Date(hoy.getTime() + diasRestantes * msPerDay);
+      const cliente = APP.clientes.find(c => c.id === vehiculo.clienteId);
+      alertas.push({ id: vehiculo.id+'_'+plantilla.id, vehiculoId: vehiculo.id, vehiculoStr: vehiculo.marca+' '+vehiculo.modelo+' ('+vehiculo.patente+')', clienteId: vehiculo.clienteId, clienteNombre: cliente?.nombre||'—', clienteTel: cliente?.telefono||'', tipo: plantilla.servicio, kmObjetivo, fechaEstimada: fechaEstimada.toISOString().split('T')[0], diasRestantes, urgente: diasRestantes <= 30 });
+    });
+  });
+  return alertas.sort((a,b) => new Date(a.fechaEstimada) - new Date(b.fechaEstimada));
 };
+
+window.renderAlertas = () => {
+  const alertas = calcularAlertas();
+  const alertasBorradas = JSON.parse(localStorage.getItem('alertas_borradas') || '[]');
+  const alertasFiltradas = alertas.filter(a => !alertasBorradas.includes(a.id));
+  document.getElementById('pantalla-alertas').innerHTML = `
+    <div class="seccion-header">
+      <h2 class="seccion-titulo" style="color:var(--rojo)">
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        Centro de alertas
+      </h2>
+    </div>
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radio-sm);padding:12px;margin-bottom:14px;font-size:13px;color:#1e40af;line-height:1.5">
+      El sistema calcula promedios y predice cuándo necesitarán volver tus clientes según las reglas configuradas en Plantillas. Se muestran alertas de los próximos 90 días.
+    </div>
+    ${alertasFiltradas.length === 0 ? '<div class="empty"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><p>'+(alertas.length === 0 ? 'No hay alertas calculadas. Configurá plantillas de mantenimiento predictivo.' : 'No hay alertas pendientes.')+'</p></div>' :
+      alertasFiltradas.map(a => '<div class="alerta-card '+(a.urgente?'urgente':'normal')+'" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px"><span class="badge '+(a.urgente?'badge-rojo':'badge-naranja')+'">'+a.tipo+'</span><span style="font-size:11px;color:var(--texto3);font-weight:600">'+Number(a.kmObjetivo).toLocaleString()+' km</span></div><p style="font-size:17px;font-weight:700;color:var(--texto);margin-bottom:2px">'+a.vehiculoStr+'</p><p style="font-size:13px;color:var(--azul);font-weight:500;margin-bottom:10px;cursor:pointer" onclick="irA('detalle-cliente',{id:''+a.clienteId+''})">Dueño: '+a.clienteNombre+'</p><div style="background:var(--fondo);border:1px solid var(--borde);border-radius:8px;padding:10px;margin-bottom:10px"><div style="display:flex;justify-content:space-between"><div><p style="font-size:11px;color:var(--texto3);margin-bottom:2px">Fecha estimada</p><p style="font-size:14px;font-weight:700;color:var(--texto)">'+formatFecha(a.fechaEstimada)+'</p></div><div style="text-align:right"><p style="font-size:11px;color:var(--texto3);margin-bottom:2px">En</p><p style="font-size:14px;font-weight:700;color:'+(a.urgente?'var(--rojo)':'var(--naranja)')+'">'+a.diasRestantes+' días</p></div></div></div><button class="btn btn-whatsapp" style="margin-bottom:8px" onclick="enviarAvisoAlertaWA(''+a.id+'')">📲 Enviar aviso por WhatsApp</button><button class="btn btn-danger" style="font-size:13px" onclick="abrirBorrarAlerta(''+a.id+'')">Borrar alerta</button></div>').join('')
+    }
+  `;
+  actualizarBadgeAlertas();
+};
+
+window.enviarAvisoAlertaWA = (alertaId) => {
+  const a = calcularAlertas().find(x => x.id === alertaId);
+  if (!a) return;
+  const msg = 'Hola '+a.clienteNombre+',\n\nNotamos que tu vehículo *'+a.vehiculoStr+'* ya debe estar aproximándose a los *'+Number(a.kmObjetivo).toLocaleString()+' km*.\n\nTe recomendamos agendar un turno para *'+a.tipo+'*.\n\n¡Contanos cuándo podés venir!\n\n'+APP.config.nombreTaller;
+  abrirWA(a.clienteTel, msg);
+};
+
+window.abrirBorrarAlerta = (alertaId) => {
+  mostrarModal('<div class="modal-handle"></div><h3 class="modal-titulo">Borrar alerta</h3><p style="font-size:14px;color:var(--texto2);margin-bottom:16px">¿Por qué querés borrar esta alerta?</p><div style="display:flex;flex-direction:column;gap:8px"><button class="btn btn-primary" onclick="borrarAlertaConServicio(''+alertaId+'')">✅ El servicio ya fue realizado</button><button class="btn btn-secondary" onclick="confirmarBorrarAlertaSinServicio(''+alertaId+'')">❌ No se realizó el servicio</button><button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button></div>');
+};
+
+window.borrarAlertaConServicio = (alertaId) => {
+  cerrarModal();
+  mostrarToast('Redirigiendo a nueva ficha de servicio...');
+  setTimeout(() => { irA('agenda'); setTimeout(() => abrirFormServicio(), 300); }, 500);
+};
+
+window.confirmarBorrarAlertaSinServicio = (alertaId) => {
+  mostrarModal('<div class="modal-handle"></div><div class="advertencia"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>La alerta desaparecerá. Si el vehículo vuelve a acercarse al límite de km, el sistema la regenerará automáticamente.</div><p style="font-size:14px;color:var(--texto2);margin:14px 0">¿Deseás borrar de todas formas?</p><div style="display:flex;gap:10px"><button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button><button class="btn btn-danger" onclick="ejecutarBorrarAlerta(''+alertaId+'')">Sí, borrar</button></div>');
+};
+
+window.ejecutarBorrarAlerta = (alertaId) => {
+  const borradas = JSON.parse(localStorage.getItem('alertas_borradas') || '[]');
+  borradas.push(alertaId);
+  localStorage.setItem('alertas_borradas', JSON.stringify(borradas));
+  cerrarModal();
+  mostrarToast('Alerta eliminada.');
+  renderAlertas();
+};
+
 window.renderConfiguracion = () => {
   document.getElementById('pantalla-configuracion').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Configuración — próximamente</p>`;
 };
-window.calcularAlertas = () => [];
 
 // ===== BORRADO CON ADVERTENCIA =====
 window.confirmarBorrarCliente = (id) => {
