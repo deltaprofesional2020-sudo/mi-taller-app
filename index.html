@@ -2305,8 +2305,395 @@ window.ejecutarBorrarAlerta = (alertaId) => {
   renderAlertas();
 };
 
+// ===== MÓDULO CONFIGURACIÓN =====
 window.renderConfiguracion = () => {
-  document.getElementById('pantalla-configuracion').innerHTML = `<p style="color:var(--texto2);text-align:center;padding:40px">Configuración — próximamente</p>`;
+  const cfg = APP.config;
+  const pinActivo = !!localStorage.getItem('taller_pin');
+  const pinOmitido = !!localStorage.getItem('taller_pin_omitido');
+
+  document.getElementById('pantalla-configuracion').innerHTML = `
+    <h2 class="seccion-titulo" style="margin-bottom:16px">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Configuración
+    </h2>
+
+    <!-- IDENTIDAD -->
+    <div class="config-seccion">
+      <div class="config-seccion-titulo">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Identidad del taller
+      </div>
+
+      <div class="campo">
+        <label>Nombre del taller</label>
+        <input type="text" id="cfg-nombre-taller" value="${cfg.nombreTaller||'Mi Taller VIP'}" onchange="guardarConfigCampo('nombreTaller',this.value)" />
+      </div>
+
+      <div class="campo">
+        <label>Tu nombre <span class="campo-opcional">(para el saludo)</span></label>
+        <input type="text" id="cfg-nombre-usuario" value="${cfg.nombreUsuario||'Mecánico'}" onchange="guardarConfigCampo('nombreUsuario',this.value)" />
+      </div>
+
+      <div class="campo">
+        <label>Logo del taller <span class="campo-opcional">(opcional)</span></label>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:56px;height:56px;border-radius:12px;background:${cfg.colorFondo||'#2563eb'};display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+            ${cfg.logo ? `<img src="${cfg.logo}" style="width:100%;height:100%;object-fit:cover" />` : `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`}
+          </div>
+          <div style="flex:1">
+            <input type="file" id="cfg-logo-input" accept="image/*" style="display:none" onchange="cargarLogo(this)" />
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('cfg-logo-input').click()">📁 Cargar imagen</button>
+            ${cfg.logo ? `<button class="btn btn-danger btn-sm" style="margin-top:6px" onclick="guardarConfigCampo('logo','')">Quitar logo</button>` : ''}
+          </div>
+        </div>
+      </div>
+
+      <div class="campo">
+        <label>Color de fondo del header</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="color" id="cfg-color" value="${cfg.colorFondo||'#2563eb'}" onchange="guardarConfigCampo('colorFondo',this.value)" style="width:48px;height:40px;border:1.5px solid var(--borde);border-radius:8px;cursor:pointer;padding:2px" />
+          <span style="font-size:13px;color:var(--texto2)">Toca para elegir el color</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGOS -->
+    <div class="config-seccion">
+      <div class="config-seccion-titulo">
+        <svg viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        Medios de pago
+      </div>
+      <p style="font-size:12px;color:var(--texto3);margin-bottom:10px;line-height:1.5">Esta información se incluirá automáticamente al pedir adelantos y enviar presupuestos por WhatsApp.</p>
+      <div class="campo">
+        <textarea id="cfg-datos-pago" rows="3" placeholder="Ej: Efectivo, Transferencia al CVU 123456..." onchange="guardarConfigCampo('datosPago',this.value)">${cfg.datosPago||''}</textarea>
+      </div>
+    </div>
+
+    <!-- APARIENCIA -->
+    <div class="config-seccion">
+      <div class="config-seccion-titulo">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        Apariencia
+      </div>
+      <div class="tabs" style="margin-bottom:0">
+        <button class="tab ${(cfg.tema||'system')==='light'?'activo':''}" onclick="guardarConfigCampo('tema','light')">Claro</button>
+        <button class="tab ${(cfg.tema||'system')==='dark'?'activo':''}" onclick="guardarConfigCampo('tema','dark')">Oscuro</button>
+        <button class="tab ${(cfg.tema||'system')==='system'?'activo':''}" onclick="guardarConfigCampo('tema','system')">Sistema</button>
+      </div>
+    </div>
+
+    <!-- SEGURIDAD -->
+    <div class="config-seccion">
+      <div class="config-seccion-titulo">
+        <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Seguridad
+      </div>
+      <div class="config-row">
+        <div>
+          <div class="config-row-label">Bloqueo con PIN</div>
+          <div class="config-row-sub">Pedir código al abrir la app</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" ${pinActivo ? 'checked' : ''} onchange="togglePin(this.checked)" />
+          <span class="switch-slider"></span>
+        </label>
+      </div>
+      ${pinActivo ? `
+      <div style="margin-top:10px">
+        <button class="btn btn-secondary btn-sm" onclick="iniciarCambioPin()">🔑 Cambiar PIN</button>
+      </div>` : ''}
+    </div>
+
+    <!-- PLANTILLAS REPUESTOS Y TRABAJOS -->
+    <div class="config-seccion">
+      <div class="config-seccion-titulo">
+        <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        Listas de referencia
+      </div>
+
+      <div style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <p style="font-size:13px;font-weight:600;color:var(--azul)">Repuestos y Materiales</p>
+          <button class="btn btn-secondary btn-sm" onclick="agregarItemLista('plantillasRepuestos')">+ Agregar</button>
+        </div>
+        <div id="lista-repuestos">
+          ${renderListaItems(APP.plantillasRepuestos || [], 'plantillasRepuestos')}
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <p style="font-size:13px;font-weight:600;color:var(--morado)">Trabajos y Servicios</p>
+          <button class="btn btn-secondary btn-sm" onclick="agregarItemLista('plantillasServicios')">+ Agregar</button>
+        </div>
+        <div id="lista-servicios">
+          ${renderListaItems(APP.plantillasServicios || [], 'plantillasServicios')}
+        </div>
+      </div>
+    </div>
+
+    <!-- SERVICIOS RÁPIDOS -->
+    <div class="config-seccion">
+      <div class="config-seccion-titulo">
+        <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Servicios rápidos
+      </div>
+      <p style="font-size:12px;color:var(--texto3);margin-bottom:12px;line-height:1.5">Al crear una ficha, podés aplicar un servicio rápido para cargar tareas y repuestos de una sola vez.</p>
+      <div id="lista-rapidas">
+        ${renderServiciosRapidos()}
+      </div>
+      <button class="btn btn-secondary" style="margin-top:10px" onclick="agregarServicioRapido()">+ Agregar servicio rápido</button>
+    </div>
+
+    <!-- MANTENIMIENTO PREDICTIVO -->
+    <div class="config-seccion">
+      <div class="config-seccion-titulo">
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        Mantenimiento predictivo
+      </div>
+      <p style="font-size:12px;color:var(--texto3);margin-bottom:12px;line-height:1.5">El sistema buscará este texto en las tareas de servicios anteriores y calculará cuándo vence el próximo mantenimiento según los km ingresados.</p>
+      <div id="lista-predictivas">
+        ${renderPlantillasPredictivas()}
+      </div>
+      <button class="btn btn-secondary" style="margin-top:10px" onclick="agregarPlantillaPredictiva()">+ Agregar regla</button>
+    </div>
+
+    <!-- CERRAR SESIÓN -->
+    <div style="margin-top:8px;padding-top:8px">
+      <button class="btn btn-danger" onclick="confirmarCerrarSesion()">Cerrar sesión</button>
+    </div>
+  `;
+};
+
+// HELPERS DE RENDER PARA LISTAS
+window.renderListaItems = (lista, coleccion) => {
+  if (!lista || lista.length === 0) return `<p style="font-size:13px;color:var(--texto3);text-align:center;padding:10px">Sin ítems. Tocá + Agregar.</p>`;
+  return lista.map(item => `
+    <div class="tag-item">
+      <span style="flex:1;font-size:13px">${item.nombre}</span>
+      <button onclick="borrarItemLista('${item.id}','${coleccion}')" aria-label="Borrar">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>`).join('');
+};
+
+window.renderServiciosRapidos = () => {
+  const lista = APP.plantillasRapidas || [];
+  if (lista.length === 0) return `<p style="font-size:13px;color:var(--texto3);text-align:center;padding:10px">Sin servicios rápidos.</p>`;
+  return lista.map(p => `
+    <div style="border:1px solid var(--borde);border-radius:10px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:600;font-size:14px;color:var(--texto)">${p.nombre}</span>
+        <button onclick="borrarServicioRapido('${p.id}')" style="background:none;border:none;cursor:pointer;color:var(--rojo)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      ${p.tareas ? `<p style="font-size:12px;color:var(--texto3)">📋 ${p.tareas}</p>` : ''}
+      ${p.repuestos ? `<p style="font-size:12px;color:var(--texto3)">🔧 ${p.repuestos}</p>` : ''}
+    </div>`).join('');
+};
+
+window.renderPlantillasPredictivas = () => {
+  const lista = APP.plantillasPredictivas || [];
+  if (lista.length === 0) return `<p style="font-size:13px;color:var(--texto3);text-align:center;padding:10px">Sin reglas configuradas.</p>`;
+  return lista.map(p => `
+    <div style="border:1px solid #fecaca;background:#fef2f2;border-radius:10px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <p style="font-weight:600;font-size:14px;color:var(--texto)">${p.servicio}</p>
+          <p style="font-size:12px;color:var(--rojo);margin-top:2px">Límite: ${Number(p.kmLimite).toLocaleString()} km</p>
+        </div>
+        <button onclick="borrarPlantillaPredictiva('${p.id}')" style="background:none;border:none;cursor:pointer;color:var(--rojo)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>`).join('');
+};
+
+// GUARDAR CONFIG
+window.guardarConfigCampo = async (campo, valor) => {
+  APP.config[campo] = valor;
+  await guardarDoc('config', 'main', APP.config);
+  aplicarTema();
+  actualizarHeaderSaludo();
+  if (campo === 'tema' || campo === 'colorFondo' || campo === 'logo') renderConfiguracion();
+  mostrarToast('✅ Guardado.');
+};
+
+window.cargarLogo = (input) => {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    await guardarConfigCampo('logo', e.target.result);
+  };
+  reader.readAsDataURL(file);
+};
+
+// LISTAS DE ÍTEMS
+window.agregarItemLista = (coleccion) => {
+  const label = coleccion === 'plantillasRepuestos' ? 'repuesto o material' : 'trabajo o servicio';
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">Agregar ${label}</h3>
+    <div class="campo">
+      <label>Nombre <span class="obligatorio">*</span></label>
+      <input type="text" id="nuevo-item" placeholder="Ej: ${coleccion === 'plantillasRepuestos' ? 'Filtro de aceite' : 'Cambio de aceite'}" />
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarItemLista('${coleccion}')">Agregar</button>
+    </div>
+  `);
+  setTimeout(() => document.getElementById('nuevo-item')?.focus(), 100);
+};
+
+window.guardarItemLista = async (coleccion) => {
+  const nombre = document.getElementById('nuevo-item')?.value.trim();
+  if (!nombre) { mostrarToast('⚠️ Ingresá un nombre.'); return; }
+  const id = getId();
+  const item = { id, nombre };
+  await guardarDoc(coleccion, id, item);
+  cerrarModal();
+  mostrarToast('✅ Ítem agregado.');
+  setTimeout(() => renderConfiguracion(), 300);
+};
+
+window.borrarItemLista = async (id, coleccion) => {
+  await borrarDoc(coleccion, id);
+  mostrarToast('🗑️ Ítem eliminado.');
+  setTimeout(() => renderConfiguracion(), 300);
+};
+
+// SERVICIOS RÁPIDOS
+window.agregarServicioRapido = () => {
+  const opcionesServicios = (APP.plantillasServicios || []).map(s => `<option value="${s.nombre}">${s.nombre}</option>`).join('');
+  const opcionesRepuestos = (APP.plantillasRepuestos || []).map(r => `<option value="${r.nombre}">${r.nombre}</option>`).join('');
+
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">Nuevo servicio rápido</h3>
+    <div class="campo">
+      <label>Título <span class="obligatorio">*</span></label>
+      <input type="text" id="sr-titulo" placeholder="Ej: Cambio de filtros y aceite" />
+    </div>
+    <div class="campo">
+      <label>Trabajos incluidos</label>
+      <textarea id="sr-tareas" rows="3" placeholder="Descripción de los trabajos a realizar..."></textarea>
+      ${opcionesServicios ? `
+      <select onchange="if(this.value){const t=document.getElementById('sr-tareas');t.value=(t.value?t.value+'\\n':'')+this.value;this.value=''}" style="margin-top:6px;width:100%;padding:8px;border:1.5px solid var(--borde);border-radius:8px;background:var(--blanco);color:var(--texto);font-size:13px">
+        <option value="">+ Agregar de la lista...</option>
+        ${opcionesServicios}
+      </select>` : ''}
+    </div>
+    <div class="campo">
+      <label>Repuestos incluidos</label>
+      <textarea id="sr-repuestos" rows="3" placeholder="Lista de repuestos necesarios..."></textarea>
+      ${opcionesRepuestos ? `
+      <select onchange="if(this.value){const r=document.getElementById('sr-repuestos');r.value=(r.value?r.value+'\\n':'')+this.value;this.value=''}" style="margin-top:6px;width:100%;padding:8px;border:1.5px solid var(--borde);border-radius:8px;background:var(--blanco);color:var(--texto);font-size:13px">
+        <option value="">+ Agregar de la lista...</option>
+        ${opcionesRepuestos}
+      </select>` : ''}
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarServicioRapido()">Guardar</button>
+    </div>
+  `);
+};
+
+window.guardarServicioRapido = async () => {
+  const nombre = document.getElementById('sr-titulo')?.value.trim();
+  if (!nombre) { mostrarToast('⚠️ Ingresá un título.'); return; }
+  const id = getId();
+  const item = { id, nombre, tareas: document.getElementById('sr-tareas')?.value.trim(), repuestos: document.getElementById('sr-repuestos')?.value.trim() };
+  await guardarDoc('plantillasRapidas', id, item);
+  cerrarModal();
+  mostrarToast('✅ Servicio rápido guardado.');
+  setTimeout(() => renderConfiguracion(), 300);
+};
+
+window.borrarServicioRapido = async (id) => {
+  mostrarConfirmacion('¿Borrar servicio rápido?', 'Esta acción no se puede deshacer.', `ejecutarBorrarServicioRapido('${id}')`);
+};
+window.ejecutarBorrarServicioRapido = async (id) => {
+  await borrarDoc('plantillasRapidas', id);
+  cerrarModal();
+  mostrarToast('🗑️ Servicio rápido eliminado.');
+  setTimeout(() => renderConfiguracion(), 300);
+};
+
+// MANTENIMIENTO PREDICTIVO
+window.agregarPlantillaPredictiva = () => {
+  const opcionesServicios = (APP.plantillasServicios || []).map(s => `<option value="${s.nombre}">${s.nombre}</option>`).join('');
+  mostrarModal(`
+    <div class="modal-handle"></div>
+    <h3 class="modal-titulo">Nueva regla predictiva</h3>
+    <p style="font-size:13px;color:var(--texto2);margin-bottom:14px;line-height:1.5">El sistema buscará el nombre del servicio en las tareas registradas y calculará el próximo vencimiento por km.</p>
+    <div class="campo">
+      <label>Servicio a monitorear <span class="obligatorio">*</span></label>
+      <input type="text" id="pp-servicio" placeholder="Ej: cambio de aceite" />
+      ${opcionesServicios ? `
+      <select onchange="if(this.value){document.getElementById('pp-servicio').value=this.value;this.value=''}" style="margin-top:6px;width:100%;padding:8px;border:1.5px solid var(--borde);border-radius:8px;background:var(--blanco);color:var(--texto);font-size:13px">
+        <option value="">Seleccionar de la lista...</option>
+        ${opcionesServicios}
+      </select>` : ''}
+    </div>
+    <div class="campo">
+      <label>Kilómetros límite <span class="obligatorio">*</span></label>
+      <input type="number" id="pp-km" placeholder="Ej: 10000" />
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPlantillaPredictiva()">Guardar regla</button>
+    </div>
+  `);
+};
+
+window.guardarPlantillaPredictiva = async () => {
+  const servicio = document.getElementById('pp-servicio')?.value.trim();
+  const kmLimite = Number(document.getElementById('pp-km')?.value);
+  if (!servicio || !kmLimite) { mostrarToast('⚠️ Completá todos los campos.'); return; }
+  const id = getId();
+  await guardarDoc('plantillasPredictivas', id, { id, servicio, kmLimite });
+  cerrarModal();
+  mostrarToast('✅ Regla guardada.');
+  setTimeout(() => renderConfiguracion(), 300);
+};
+
+window.borrarPlantillaPredictiva = async (id) => {
+  mostrarConfirmacion('¿Borrar esta regla?', 'Las alertas calculadas con esta regla dejarán de generarse.', `ejecutarBorrarPlantillaPredictiva('${id}')`);
+};
+window.ejecutarBorrarPlantillaPredictiva = async (id) => {
+  await borrarDoc('plantillasPredictivas', id);
+  cerrarModal();
+  mostrarToast('🗑️ Regla eliminada.');
+  setTimeout(() => renderConfiguracion(), 300);
+};
+
+// PIN
+window.togglePin = (activar) => {
+  if (!activar) {
+    localStorage.removeItem('taller_pin');
+    localStorage.setItem('taller_pin_omitido', 'true');
+    mostrarToast('PIN desactivado.');
+    renderConfiguracion();
+  } else {
+    localStorage.removeItem('taller_pin_omitido');
+    mostrarToast('PIN activado. Se configurará al recargar la app.');
+    renderConfiguracion();
+  }
+};
+
+window.iniciarCambioPin = () => {
+  mostrarPantallaPIN('cambiar_verificar');
+};
+
+// CERRAR SESIÓN
+window.confirmarCerrarSesion = () => {
+  mostrarConfirmacion('¿Cerrar sesión?', 'Se cerrará tu sesión de Google. Los datos quedan guardados en la nube.', 'cerrarSesion()');
 };
 
 // ===== BORRADO CON ADVERTENCIA =====
